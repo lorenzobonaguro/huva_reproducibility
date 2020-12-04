@@ -1,0 +1,16 @@
+---
+title: "Figure 3 - huva"
+author: "Bonaguro et al."
+output: 
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+editor_options: 
+  chunk_output_type: inline
+---
+
+This Rmarkdonwn document can be used to reproduce the panels in figure 3 of the manuscript: huva: human variation in gene expression as surrogate for gene function.
