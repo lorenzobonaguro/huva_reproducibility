@@ -42,8 +42,7 @@ If you use *huva* in your research project consider citing us [linktojournal](we
 ## Contact or follow us
 For any problem of question regrding the *huva* package or this repositoy or you just want to be up to date on what is coming next, send us an [email](mailto:lorenzobonaguro@uni-bonn.de) or follow us:  
 
-<img src="./images/twitter.png" width="15%" style="float: left;">  
-<br/>
+<img src="./images/twitter.png" width="12%" style="float: left;">  
 
 [@LorenzoBonaguro](https://twitter.com/LorenzoBonaguro)  
 [@AschenbrennerAC](https://twitter.com/AschenbrennerAC)  

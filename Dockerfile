@@ -12,8 +12,8 @@ RUN Rscript -e 'BiocManager::install(update = T, ask = F)' && \
 	Rscript -e 'BiocManager::install(c("ggplot2", "Rmisc", "ggpubr", "reshape2", "ggsci", "plotly", "knitr", "pheatmap", "useful", "rmarkdown"), version = "3.12")' && \
 	Rscript -e 'BiocManager::install(c("fgsea", "limma", "GSVA"), version = "3.12")'
 
-# Install R packages (required for other analyses)
-RUN Rscript -e 'BiocManager::install()'    
+# Install R packages (required for other analyses)  
+RUN Rscript -e 'BiocManager::install(c("tictoc", "tidyverse"), version = "3.12")'
 
 # Install HUVA
 COPY huva_0.1.4.tar.gz /tmp/huva_0.1.4.tar.gz

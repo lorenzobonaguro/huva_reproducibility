@@ -1,16 +1,278 @@
 ---
-title: "Figure 1 - huva"
+title: "Figure 1 - *huva*"
 author: "Bonaguro et al."
 output: 
   html_document:
-    code_folding: hide
+    code_folding: show
     toc: yes
-    toc_depth: 3
+    toc_depth: 5
     toc_float:
       collapsed: yes
       smooth_scroll: no
+    number_sections: true
 editor_options: 
   chunk_output_type: inline
 ---
 
-This Rmarkdonwn document can be used to reproduce the panels in figure 1 of the manuscript: huva: human variation in gene expression as surrogate for gene function.
+This Rmarkdonwn document can be used to reproduce the panels in figure 1 of the manuscript: *huva: human variation in gene expression as surrogate for gene function*.
+To run this script without any problem of dependencies or conflicts in the installation we suggest to use the docker image we provide (see README file). 
+
+# Figure 1 (Supp. Figures S1,S2)
+The first figure provide the reader with a benchmark of the *huva* package, we measured here the time required for the computation of the 4 *huva experiments*. 
+We performed the analysis on standard workstation hardware (Intel Core I7-8700K @3.70GHz, 32 GB RAM memory, Windows 10 Pro version 2004).
+Considering the nature of the analysis we expect this not to produce the same result on every system, nevertheless we expect that similar hardware will give comparable results.
+
+To run the huva package we do not provide any minimum requirements, we expect any system able to run the requirements of the *huva* package should provide sufficient resources for huva analysis.
+
+## Loading required packages
+```{r}
+library(huva)
+library(huva.db)
+library(tictoc)
+library(gridExtra)
+library(ggplot2)
+library(grid)
+```
+
+## Costum Functions
+```{r}
+plot <- function(vector, title="", fill, bins=30) {
+  gene_df <- as.data.frame(vector)
+colnames(gene_df) <- "time"
+
+p1 = ggplot(aes(x = time), data = gene_df) +
+  geom_histogram(fill = fill, color = "black", aes(y=..density..), alpha=0.5, bins = bins) +
+  labs(x = "", y = "density", title = (title)) + 
+  theme_bw() + theme(aspect.ratio = 1)
+
+p2 = ggplot(aes(x = "", y = time), data = gene_df) +
+  stat_boxplot(geom ='errorbar', width = 0.4) +
+  geom_boxplot(outlier.colour = "black") +
+  coord_flip() +
+  labs(x = "", y = "time (s)") +
+  theme_void() + theme(aspect.ratio = 1/6)
+
+
+grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), size = "first"))
+}
+```
+
+## Calculate the benchmark
+Here we are going to calculate the average time required for each of the *huva* experiments, the package tictoc will be use to keep track of the time required for each experiment
+
+### Prepare a container
+```{r}
+bench <- list()
+```
+
+### Setting seed
+Setting the seed will allow to always capture the same genes in the simulation
+```{r}
+set.seed(91)
+```
+
+### *huva GOI experiment*
+Here we will calculate the time required for the run of an *huva GOI experiment*
+```{r, echo = T, results = 'hide'}
+# Removing from the calculation the 3rd dataset of the classifier for the low number of samples included
+huva.db_new <- huva.db
+huva.db_new$classifier$data$PBMC.3 <- NULL
+huva.db_new$classifier$anno$PBMC.3 <- NULL
+
+# Selecting random genes
+genes <- sample(rownames(huva.db_new$FG500$data$PBMC), 2000)
+
+bench$gene <- vector()
+
+for (i in 1:length(genes)) {
+  tic()
+  
+  run_huva_experiment(data = huva.db_new, 
+                      gene = genes[i], 
+                      quantiles = 0.10, 
+                      gs_list = hallmarks_V7.2,
+                      summ = F, 
+                      datasets_list = NULL, 
+                      adjust.method = "none")
+  
+  time <- toc()
+  time <- time$toc-time$tic
+  bench$gene[i] <- time
+}
+
+names(bench$gene) <- genes
+```
+
+### *huva SOI experiment*
+Here we will calculate the time required for the run of an *huva SOI experiment*
+```{r, echo = T, results = 'hide'}
+# Filtering the signatures for only those including > 100 genes
+now_msig <- list()
+
+for (i in names(msigdb_V7.2)) {
+  
+  if (length(msigdb_V7.2[[i]])>100) {
+    
+    now_msig[i] <- msigdb_V7.2[i]
+    
+  }
+  
+}
+
+signature <- sample(now_msig, 500)
+
+bench$signature <- vector()
+
+for (i in 1:length(signature)) {
+  tic()
+  
+  run_huva_signature(data = huva.db_new,   
+                            gene_set = signature[[i]], 
+                            GSVA.method =  "gsva",
+                            quantiles = 0.10, 
+                            gs_list = hallmarks_V7.2,
+                            summ = F, 
+                            datasets_list = NULL, 
+                            adjust.method = "none")
+  
+  time <- toc()
+  time <- time$toc-time$tic
+  bench$signature[i] <- time
+}
+
+names(bench$signature) <- names(signature)
+```
+
+### *huva POI experiment*
+Here we will calculate the time required for the run of an *huva POI experiment*
+```{r, echo = T, results = 'hide'}
+cell_count <- as.character(colnames(huva.db_new$FG500$metadata$cellcount))[-1]
+cytokines <- as.character(colnames(huva.db_new$FG500$metadata$cytokines))[-1]
+
+# Removing this parameter because of too many missing values
+cytokines <- cytokines[cytokines!="IL6_Influenza_PBMC_24h"]
+
+bench$phenotype <- vector()
+
+for (i in 1:length(cell_count)) {
+  tic()
+  
+  run_huva_phenotype(data = huva.db_new,
+                     phenotype = cell_count[i],
+                     study = "FG500",
+                     metadata_table = "cellcount",
+                     quantiles = 0.1, 
+                     gs_list = hallmarks_V7.2)
+  
+  time <- toc()
+  time <- time$toc-time$tic
+  bench$phenotype[i] <- time
+}
+
+for (i in 1:length(cytokines)) {
+  tic()
+  
+  run_huva_phenotype(data = huva.db_new,
+                     phenotype = cytokines[i],
+                     study = "FG500",
+                     metadata_table = "cytokines",
+                     quantiles = 0.1, 
+                     gs_list = hallmarks_V7.2)
+  
+  time <- toc()
+  time <- time$toc-time$tic
+  bench$phenotype[length(cell_count)+i] <- time
+}
+
+names(bench$phenotype) <- c(cell_count, cytokines)
+```
+
+### *huva exploratory experiment*
+Here we will calculate the time required for the run of an *huva exploratory experiment*
+```{r, echo = T, results = 'hide'}
+bench$explor <- vector()
+
+for (i in genes) {
+ 
+  tic()
+  
+  gene_exam(huva_dataset = huva.db_new, gene = i)
+  
+  time <- toc()
+  time <- time$toc-time$tic
+  bench$explor[i] <- time
+}
+```
+
+### Plotting
+#### Fig S2A
+```{r}
+plot(vector = bench$explor, title = "Fig. S2A - huva exploratory experiment", fill = "#4DBBD5", bins = 30)
+dev.off()
+```
+
+#### Fig S2B
+```{r}
+plot(vector = bench$gene, title = "Fig. S2B - huva gene experiment", fill = "#E64B35", bins = 30)
+dev.off()
+```
+
+#### Fig S2C
+```{r}
+plot(vector = bench$phenotype, title = "Fig. S2C - huva phenotype experiment", fill = "#01A087", bins = 30)
+dev.off()
+```
+
+#### Fig S2D
+```{r}
+plot(vector = bench$signature, title = "Fig. S2D - huva signature experiment", fill = "#F39B7F", bins = 30)
+dev.off()
+```
+
+## Extra - Plot the original results
+You can from this chunk load the result shown in the manuscript:
+```{r}
+bench_orig <- readRDS("data/original_results.rds")
+```
+
+### Plotting
+
+#### Fig S2A
+```{r}
+plot(vector = bench_orig$explor, title = "Fig. S2A - huva exploratory experiment", fill = "#4DBBD5", bins = 30)
+dev.off()
+```
+
+#### Fig S2B
+```{r}
+plot(vector = bench_orig$gene, title = "Fig. S2B - huva gene experiment", fill = "#E64B35", bins = 30)
+dev.off()
+```
+
+#### Fig S2C
+```{r}
+plot(vector = bench_orig$phenotype, title = "Fig. S2C - huva phenotype experiment", fill = "#01A087", bins = 30)
+dev.off()
+```
+
+#### Fig S2D
+```{r}
+plot(vector = bench_orig$signature, title = "Fig. S2D - huva signature experiment", fill = "#F39B7F", bins = 30)
+dev.off()
+```
+
+## Clean the env
+```{r}
+rm(progressBar, cell_count, cytokines, genes, i, iGeneSet, nGeneSets, time, signature)
+```
+
+# Session info
+```{r}
+info <- sessionInfo()
+info
+```
+
+# Save environment
+```{r}
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
+```

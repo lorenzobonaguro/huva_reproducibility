@@ -1,16 +1,510 @@
 ---
-title: "Figure 2 - huva"
+title: "Figure 2 - *huva*"
 author: "Bonaguro et al."
 output: 
   html_document:
-    code_folding: hide
+    code_folding: show
     toc: yes
-    toc_depth: 3
+    toc_depth: 5
     toc_float:
       collapsed: yes
       smooth_scroll: no
+    number_sections: true
 editor_options: 
   chunk_output_type: inline
 ---
 
-This Rmarkdonwn document can be used to reproduce the panels in figure 2 of the manuscript: huva: human variation in gene expression as surrogate for gene function.
+This Rmarkdonwn document can be used to reproduce the panels in figure 1 of the manuscript: *huva: human variation in gene expression as surrogate for gene function*.
+To run this script without any problem of dependencies or conflicts in the installation we suggest to use the docker image we provide (see README file). 
+
+# Figure 2 (Supp. Figures S3,S4)
+In the second figure we test the performance of *huva* in the imputation of phenotype and function of a well-known gene. We focus figure 2 and S3 in the analysis of *MyD88*, gene reported several time as adaptor protein for the TLR signalling pathway. In Figure S4 we extend the analysis to other genes of known function (*AKT*, *MAPK3*
+
+## Loading required packages
+```{r}
+library(huva)
+library(huva.db)
+library(tidyverse)
+library(ggplot2)
+library(pheatmap)
+library(ggsci)
+library(fgsea)
+library(ggrepel)
+library(ggpubr)
+```
+
+## Costum Functions
+```{r}
+scaleColors <- function(data = input_scale, # data to use
+                        maxvalue = NULL # value at which the color is fully red / blue
+                        ){
+  if(is.null(maxvalue)){
+    maxvalue <- floor(min(abs(min(data)), max(data)))
+  }
+  if(max(data) > abs(min(data))){
+    if(ceiling(max(data)) == maxvalue){
+      myBreaks <- c(floor(-max(data)), seq(-maxvalue+0.2, maxvalue-0.2, 0.2),  ceiling(max(data)))
+    } else{
+      myBreaks <- c(floor(-max(data)), seq(-maxvalue, maxvalue, 0.2),  ceiling(max(data)))
+    }
+    paletteLength <- length(myBreaks)
+    myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
+  } else {
+    if(-floor(min(data)) == maxvalue){
+      myBreaks <- c(floor(min(data)), seq(-maxvalue+0.2, maxvalue-0.2, 0.2),  ceiling(min(data)))
+    } else{
+      myBreaks <- c(floor(min(data)), seq(-maxvalue, maxvalue, 0.2),  ceiling(abs(min(data))))
+    }
+    paletteLength <- length(myBreaks)
+    myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
+  }
+ return(list(breaks = myBreaks, color = myColor))
+}
+```
+
+## *huva GOI experiment* for *MyD88*
+First we calculate the *huva* results for the GOI *MyD88* and collect it in a list. This calculation will take longer compared to previous *huva experiment*, this is because here we are calculating the GSEA for the complete MsigDB signature collection and not only for the hallmark genes
+
+```{r, echo=T, results='hide', warning=F}
+set.seed(91)
+
+MYD88 <- list()
+
+MYD88$bin_data <- run_huva_experiment(data = huva.db, 
+                                      gene = "MYD88", 
+                                      quantiles = 0.10, 
+                                      gs_list = msigdb_V7.2,
+                                      summ = T, 
+                                      datasets_list = NULL, 
+                                      adjust.method = "BH")
+
+MYD88$overview <- gene_exam(huva_dataset = huva.db, gene = "MYD88")
+```
+ 
+
+### *MyD88* expression in 500FG cohort
+We now want to investigate the distribution of MyD88 expression in the cohort
+
+#### Histogram 
+```{r}
+expression <- MYD88$overview$expression$FG500_PBMC
+
+expression$group <- ifelse(expression$expression < quantile(expression$expression, 0.1), "low", ifelse(expression$expression > quantile(expression$expression, 0.9), "high", "none"))
+
+ggplot(expression, aes(x=expression)) +
+  geom_histogram(color="black", bins = 20, fill= "white") + 
+  theme_bw() + theme(aspect.ratio = 1) +
+  geom_vline(xintercept =quantile(expression$expression, 0.1), linetype = "dashed") + 
+  geom_vline(xintercept =quantile(expression$expression, 0.9), linetype = "dashed") + 
+  ggtitle("Fig 2a - MyD88 expression in 500FG") +
+  xlab("MYD88 rlog expression")
+```
+
+#### qqplot
+To test for normal distribution of the rlog expression we plot the data in a qqplot and perform a Shapiro test for normal distribution (p = 0.2003)
+```{r}
+ggqqplot(MYD88$overview$expression$FG500_PBMC$expression) + theme_bw() + theme(aspect.ratio = 1) + ggtitle("Fig. S3b - qqplot MyD88 expression")
+
+shapiro.test(MYD88$overview$expression$FG500_PBMC$expression)
+```
+#### HIGH and LOW
+In the huva experiment we define two groups with high and low expression of MyD88, here we pot in a boxplot the expression of our gene of interest in the two groups.
+
+```{r}
+plot_binned <- plot_binned_gene(goi = "MYD88", huva_experiment = MYD88$bin_data)
+
+plot_binned$FG500_PBMC + theme_bw() + theme(aspect.ratio = 2) + scale_y_continuous(limits = c(11, 13)) + ggtitle("Fig 2b - expression in HIGH and LOW groups")
+```
+
+
+### Comparing the transcriptome 
+At this stage we analyse the difference between the transcriptome of the HIGH and LOW *MyD88* *huva* groups, at first we look the the principal component analysis.
+
+#### PCA
+```{r}
+MYD88$DE_genes <- get_DE_huva(huva_exp = MYD88$bin_data, study = "FG500", dataset = "FG500_PBMC", cluster_col = F)
+
+MYD88$DE_genes$PCA_FG500_PBMC + ggtitle("Fig. S3c - Principal component analysis")
+```
+#### Volcano plot
+```{r}
+# Preparing the DE genes list filtering for a fold change of 2 and a corrected p value of 0.05
+DE_table <- MYD88$bin_data$FG500$DE_genes$FG500_PBMC
+
+DE_table$reg <- ifelse(DE_table$logFC < -1 & DE_table$adj.P.Val < 0.05, "down", 
+                       ifelse(DE_table$logFC > 1 & DE_table$adj.P.Val < 0.05, "up", "none"))
+
+DE_table$symbol <- rownames(DE_table)
+
+# Manually select which genes to label in the volcano plot
+gene.to.label <- c("NFAT5", "IFIT1", "IFIT2", "IFIT3", "CXCR2", "TLR4", "TLR6", "MYD88")
+
+DE_table$label <- ifelse(DE_table$symbol %in% gene.to.label, "T", "F")
+
+ggplot(DE_table, aes(x=logFC, y=-log10(adj.P.Val), alpha =-log10(adj.P.Val), fill=reg, size=reg)) +
+  geom_point(shape=21) + 
+  theme_bw() + theme(aspect.ratio = 1) + scale_x_continuous(limits = c(-3, 3)) + 
+  geom_vline(xintercept = c(-1, 1) , linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") + 
+  scale_fill_manual(values = c("#6495ED", "#BEBEBE", "#B22222")) +
+  scale_size_manual(values = c(3,1,3)) +
+  geom_text_repel(data=DE_table[!DE_table$label =="F",],aes(label=symbol), size=4, alpha=1, force = 100) +
+  ggtitle("Fig. S2c - Volcano plot differential expression")
+```
+
+#### Barplot of DE genes
+```{r}
+bar_DE <- as.data.frame(table(DE_table$reg))
+bar_DE <- bar_DE[bar_DE$Var1 %in% c("up", "down"), ]
+
+ggplot(bar_DE, aes(x=Var1, y=Freq, fill=Var1)) +
+  geom_bar(stat = "identity", color = "black") + 
+  scale_x_discrete(limits = c("up", "down")) +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_fill_manual(values = c("#33CC99", "#FF6633")) +
+  ggtitle("Fig. S3d - Number of differentially expressed genes")
+```
+
+#### Heatmap of DE genes
+```{r}
+anno <- MYD88$bin_data$FG500$anno$FG500_PBMC
+data <- MYD88$bin_data$FG500$data$FG500_PBMC
+
+rownames(anno) <- anno$Row.names
+
+data <- data[rownames(DE_table[DE_table$reg != "none",]),]
+
+data <- t(scale(t(data)))
+
+pheatmap(mat = data,
+         scale = "none",
+         cluster_rows = T,
+         cluster_cols = T,
+         annotation = anno[, c(2,3)],
+         annotation_colors = list(group=c(high="#c93918", low="#0e2e99"),
+         expression=heat.colors(20, alpha = 1)), show_rownames = F, show_colnames = F,
+         breaks = scaleColors(data = data, maxvalue = NULL)[["breaks"]], 
+         color = scaleColors(data = data, maxvalue = NULL)[["color"]], cutree_rows = 2, cutree_cols = 2, 
+         main = "Fig. S3e - Heatmap of differentially expressed genes")
+```
+
+### Phenotypic changes
+myd88 is important for the production of cytokines and TLR signalling
+
+```{r}
+meta_stat <- get_meta.stat_huva(huva_exp = MYD88$bin_data, study = "FG500")
+
+# Assign the measured cytokine to the data
+meta_stat$FG500_PBMC_cytokines$type <- unlist(lapply(strsplit(as.character(meta_stat$FG500_PBMC_cytokines$variable), split = "_"), `[[`, 1))
+
+# Assaign the main cell type to the data
+meta_stat$FG500_PBMC_cellcount$type <- c("B_cell", "B_cell","B_cell","B_cell","B_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "B_cell", "B_cell", "Monocytes", "T_cell", "T_cell", "Granulocytes", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "B_cell", "Monocytes", "T_cell", "B_cell", "Monocytes", "B_cell", "B_cell", "B_cell", "NK_cell", "NK_cell","NK_cell","NK_cell", "Monocytes", "B_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "T_cell", "B_cell", "T_cell", "T_cell", "T_cell", "T_cell")
+```
+
+#### Cell count - Volcano
+```{r}
+ggplot(meta_stat$FG500_PBMC_cellcount, aes(x=log2(fc_low_high), y=-log10(p), fill = type)) +
+  geom_point(shape=21, size=5) + 
+  theme_bw() + theme(aspect.ratio = 2) +
+  geom_vline(xintercept = 0, linetype = "dashed") + 
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") + 
+  scale_x_continuous(limits = c(-4.5,4.5), breaks = c(-4, -2, 0, 2,4)) + 
+  scale_fill_npg() + ggtitle("Fig. S3f - Volcano plot of differential cell counts")
+```
+#### Cytokines - Volcano
+```{r}
+ggplot(meta_stat$FG500_PBMC_cytokines, aes(x=log2(fc_low_high), y=-log10(p), fill = type)) +
+  geom_point(shape=21, size=5) + 
+  scale_x_continuous(limits = c(-0.4,0.4)) + 
+  theme_bw() + theme(aspect.ratio = 2) +
+  geom_vline(xintercept = 0, linetype = "dashed") + 
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") + 
+  scale_fill_aaas() + ggtitle("Fig. 2f - Volcano plot of differential cytokines secreion")
+```
+#### Monocytes - Boxplot
+```{r}
+meta_plot <- get_meta.plot_huva(MYD88$bin_data, study = "FG500")
+
+meta_plot$FG500_PBMC_cellcount$`Monocytes (CD14+)` + theme_bw() + theme(aspect.ratio = 2) + 
+  expand_limits(y=0) + ggtitle("Fig. 2d - Monocytes - boxplot")
+```
+
+#### Classical monocytes - Boxplot
+```{r}
+meta_plot$FG500_PBMC_cellcount$`Classical monocytes (CD14++CD16-)` + theme_bw() + theme(aspect.ratio = 2) + 
+  expand_limits(y=0) + ggtitle("Fig. S3g - Classical monocytes - boxplot")
+```
+
+#### Non-classical monocytes - Boxplot
+```{r}
+meta_plot$FG500_PBMC_cellcount$`Non-classical monocytes (CD14++CD16+)` + theme_bw() + theme(aspect.ratio = 2) + 
+  expand_limits(y=0) + ggtitle("Fig. 2e - Non-classical monocytes - boxplot")
+```
+
+#### Int. monocytes - Boxplot
+```{r}
+meta_plot$FG500_PBMC_cellcount$`Intermediate monocytes (CD14+CD16+)` + theme_bw() + theme(aspect.ratio = 2) + 
+  expand_limits(y=0) + ggtitle("Fig. S3h - Int. monocytes - boxplot")
+```
+
+#### IL6 - LPS - boxplot
+```{r}
+meta_plot$FG500_PBMC_cytokines$IL6_LPS_macroPG_24h + theme_bw() + 
+  theme(aspect.ratio = 2) + ggtitle("Fig. 2g - IL6 - LPS - boxplot")
+```
+
+#### Int. monocytes - Boxplot
+```{r}
+meta_plot$FG500_PBMC_cytokines$IL6_CpG_PBMC_24h + theme_bw() + 
+  theme(aspect.ratio = 2) + ggtitle("Fig. 2i - IL6 - CpG - boxplot")
+```
+
+#### Int. monocytes - Boxplot
+```{r}
+meta_plot$FG500_PBMC_cytokines$IL6_Pam3Cys_PBMC_24h + theme_bw() + 
+  theme(aspect.ratio = 2) + ggtitle("Fig. 2j - IL6 - Pam3Cys - boxplot")
+```
+
+### GSEA of *MyD88* related signatures
+
+#### Volcano plot of selected signatures
+```{r}
+gsea <- MYD88$bin_data$FG500$gsea$FG500_PBMC
+
+gsea <- gsea[c(1215,9842,9843,12203),]
+
+ggplot(gsea, aes(x=NES, y=-log10(pval), label = pathway)) +
+  geom_point(shape = 21, size = 5) + 
+  theme_bw() + theme(aspect.ratio = 2) + 
+  scale_x_continuous(limits = c(-3, 3)) + 
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") + 
+  geom_text_repel(size = 2) + ggtitle("Fig. S3k - GSEA of selected signatures")
+```
+#### GNF2 MYD88 Enrichment
+```{r}
+plotEnrichment(msigdb_V7.2$GNF2_MYD88,
+               MYD88$bin_data$FG500$Rank_genelist$FG500_PBMC) + labs(title="GNF2 MYD88") + ggtitle("Fig. S3l - GSEA plot GNF2 MYD88")
+
+anno <- MYD88$bin_data$FG500$anno$FG500_PBMC
+data <- MYD88$bin_data$FG500$data$FG500_PBMC
+
+rownames(anno) <- anno$Row.names
+
+anno <- anno[order(anno$group),]
+
+data <- data[rownames(data) %in% unlist(gsea[gsea$pathway=="GNF2_MYD88",]$leadingEdge),]
+
+data <- data[, anno$Row.names]
+
+data <- t(scale(t(data)))
+
+pheatmap(mat = data,
+         scale = "none",
+         cluster_rows = T,
+         cluster_cols = F,
+         annotation = anno[, c(2,3)],
+         annotation_colors = list(group=c(high="#c93918", low="#0e2e99"),
+         expression=heat.colors(20, alpha = 1)), show_rownames = T, show_colnames = F, border_color = NA,
+         breaks = scaleColors(data = data, maxvalue = NULL)[["breaks"]], 
+         color = scaleColors(data = data, maxvalue = NULL)[["color"]], main = "Fig. S3m - leading edge GNF2 MYD88")
+```
+
+```{r}
+plotEnrichment(msigdb_V7.2$GSE22935_WT_VS_MYD88_KO_MACROPHAGE_UP,
+               MYD88$bin_data$FG500$Rank_genelist$FG500_PBMC) + labs(title="WT vs. MyD88 KO Macrophages") + 
+                ggtitle("Fig. 2h - GSEA plot WT vs. MyD88 KO Macrophages")
+
+anno <- MYD88$bin_data$FG500$anno$FG500_PBMC
+data <- MYD88$bin_data$FG500$data$FG500_PBMC
+
+rownames(anno) <- anno$Row.names
+
+anno <- anno[order(anno$group),]
+
+data <- data[rownames(data) %in% unlist(gsea[gsea$pathway=="GSE22935_WT_VS_MYD88_KO_MACROPHAGE_UP",]$leadingEdge),]
+
+data <- data[, anno$Row.names]
+
+data <- t(scale(t(data)))
+
+pheatmap(mat = data,
+         scale = "row",
+         cluster_rows = T,
+         cluster_cols = F,
+         annotation = anno[, c(2,3)],
+         annotation_colors = list(group=c(high="#c93918", low="#0e2e99"),
+         expression=heat.colors(20, alpha = 1)), show_rownames = T, show_colnames = F, border_color = NA,
+         breaks = scaleColors(data = data, maxvalue = NULL)[["breaks"]], 
+         color = scaleColors(data = data, maxvalue = NULL)[["color"]], main = "Fig. S3m - leading edge WT vs. MyD88 KO Macrophages")
+```
+
+## Analysis of additional genes
+
+### AKT
+
+#### *huva GOI experiment*
+```{r, echo=T, results='hide', warning=F}
+set.seed(91)
+
+AKT <- list()
+
+AKT$bin_data <- run_huva_experiment(data = huva.db, 
+                                      gene = "AKT1", 
+                                      quantiles = 0.10, 
+                                      gs_list = msigdb_V7.2,
+                                      summ = T, 
+                                      datasets_list = NULL, 
+                                      adjust.method = "BH")
+
+AKT$overview <- gene_exam(huva_dataset = huva.db, gene = "AKT1")
+```
+
+#### AKT_UP.V1_UP enrichment
+```{r}
+gsea <- AKT$bin_data$FG500$gsea$FG500_PBMC
+
+plotEnrichment(msigdb_V7.2$AKT_UP.V1_UP,
+               AKT$bin_data$FG500$Rank_genelist$FG500_PBMC) + labs(title="AKT_UP.V1_UP") + theme(aspect.ratio = 1/2) +
+  ggtitle("Fig. S4a - GSEA plot AKT_UP.V1_UP")
+
+anno <- AKT$bin_data$FG500$anno$FG500_PBMC
+data <- AKT$bin_data$FG500$data$FG500_PBMC
+
+rownames(anno) <- anno$Row.names
+
+anno <- anno[order(anno$group),]
+
+data <- data[rownames(data) %in% unlist(gsea[gsea$pathway=="AKT_UP.V1_UP",]$leadingEdge),]
+
+data <- data[, anno$Row.names]
+
+data <- t(scale(t(data)))
+
+pheatmap(mat = data,
+         scale = "none",
+         cluster_rows = T,
+         cluster_cols = F,
+         annotation = anno[, c(2,3)],
+         annotation_colors = list(group=c(high="#c93918", low="#0e2e99"),
+         expression=heat.colors(20, alpha = 1)), show_rownames = T, show_colnames = F, border_color = NA,
+         breaks = scaleColors(data = data, maxvalue = NULL)[["breaks"]], 
+         color = scaleColors(data = data, maxvalue = NULL)[["color"]], main = "Fig. S4b - leading edge AKT_UP.V1_UP")
+```
+### ERK (MAPK3)
+
+#### *huva GOI experiment*
+```{r, echo=T, results='hide', warning=F}
+set.seed(91)
+
+ERK1 <- list()
+
+ERK1$bin_data <- run_huva_experiment(data = huva.db, 
+                                      gene = "MAPK3", 
+                                      quantiles = 0.10, 
+                                      gs_list = msigdb_V7.2,
+                                      summ = T, 
+                                      datasets_list = NULL, 
+                                      adjust.method = "BH")
+
+ERK1$overview <- gene_exam(huva_dataset = huva.db, gene = "MAPK3")
+```
+
+#### GO_ERK1_AND_ERK2_CASCADE enrichment
+```{r}
+gsea <- ERK1$bin_data$FG500$gsea$FG500_PBMC
+
+plotEnrichment(msigdb_V7.2$GO_ERK1_AND_ERK2_CASCADE,
+               ERK1$bin_data$FG500$Rank_genelist$FG500_PBMC) + labs(title="GO_ERK1_AND_ERK2_CASCADE") + theme(aspect.ratio = 1/2) +
+  ggtitle("Fig. S4c - GSEA plot GO_ERK1_AND_ERK2_CASCADE")
+
+anno <- ERK1$bin_data$FG500$anno$FG500_PBMC
+data <- ERK1$bin_data$FG500$data$FG500_PBMC
+
+rownames(anno) <- anno$Row.names
+
+anno <- anno[order(anno$group),]
+
+data <- data[rownames(data) %in% unlist(gsea[gsea$pathway=="GO_ERK1_AND_ERK2_CASCADE",]$leadingEdge),]
+
+data <- data[, anno$Row.names]
+
+data <- t(scale(t(data)))
+
+pheatmap(mat = data,
+         scale = "none",
+         cluster_rows = T,
+         cluster_cols = F,
+         annotation = anno[, c(2,3)],
+         annotation_colors = list(group=c(high="#c93918", low="#0e2e99"),
+         expression=heat.colors(20, alpha = 1)), show_rownames = T, show_colnames = F, border_color = NA,
+         breaks = scaleColors(data = data, maxvalue = NULL)[["breaks"]], 
+         color = scaleColors(data = data, maxvalue = NULL)[["color"]], main = "Fig. S4d - leading edge GO_ERK1_AND_ERK2_CASCADE")
+```
+
+### STAT1
+
+#### *huva GOI experiment*
+```{r, echo=T, results='hide', warning=F}
+set.seed(91)
+
+STAT1 <- list()
+
+STAT1$bin_data <- run_huva_experiment(data = huva.db, 
+                                      gene = "STAT1", 
+                                      quantiles = 0.10, 
+                                      gs_list = msigdb_V7.2,
+                                      summ = T, 
+                                      datasets_list = NULL, 
+                                      adjust.method = "BH")
+
+STAT1$overview <- gene_exam(huva_dataset = huva.db, gene = "STAT1")
+```
+
+#### GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP enrichment
+```{r}
+gsea <- STAT1$bin_data$FG500$gsea$FG500_PBMC
+
+plotEnrichment(msigdb_V7.2$GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP,
+               STAT1$bin_data$FG500$Rank_genelist$FG500_PBMC) + labs(title="GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP") + theme(aspect.ratio = 1/2) +
+  ggtitle("Fig. S4e - GSEA plot GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP")
+
+anno <- STAT1$bin_data$FG500$anno$FG500_PBMC
+data <- STAT1$bin_data$FG500$data$FG500_PBMC
+
+rownames(anno) <- anno$Row.names
+
+anno <- anno[order(anno$group),]
+
+data <- data[rownames(data) %in% unlist(gsea[gsea$pathway=="GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP",]$leadingEdge),]
+
+data <- data[, anno$Row.names]
+
+data <- t(scale(t(data)))
+
+pheatmap(mat = data,
+         scale = "none",
+         cluster_rows = T,
+         cluster_cols = F,
+         annotation = anno[, c(2,3)],
+         annotation_colors = list(group=c(high="#c93918", low="#0e2e99"),
+         expression=heat.colors(20, alpha = 1)), show_rownames = T, show_colnames = F, border_color = NA,
+         breaks = scaleColors(data = data, maxvalue = NULL)[["breaks"]], 
+         color = scaleColors(data = data, maxvalue = NULL)[["color"]], main = "Fig. S4d - leading edge GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP")
+```
+
+## Clean the env
+```{r}
+rm(anno, bar_DE, data, DE_table, expression, gsea, meta_plot, meta_stat, plot_binned, gene.to.label)
+```
+
+# Session info
+```{r}
+info <- sessionInfo()
+info
+```
+
+# Save environment
+```{r}
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
+```
