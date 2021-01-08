@@ -25,7 +25,7 @@ Considering the nature of the analysis we expect this not to produce the same re
 To run the huva package we do not provide any minimum requirements, we expect any system able to run the requirements of the *huva* package should provide sufficient resources for huva analysis.
 
 ## Loading required packages
-```{r}
+```{r, message = FALSE, warning = FALSE}
 library(huva)
 library(huva.db)
 library(tictoc)
@@ -50,7 +50,7 @@ p2 = ggplot(aes(x = "", y = time), data = gene_df) +
   geom_boxplot(outlier.colour = "black") +
   coord_flip() +
   labs(x = "", y = "time (s)") +
-  theme_void() + theme(aspect.ratio = 1/6)
+  theme_bw() + theme(aspect.ratio = 1/6)
 
 
 grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), size = "first"))
@@ -274,5 +274,5 @@ info
 
 # Save environment
 ```{r}
-save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_1.RData", sep = ""))
 ```

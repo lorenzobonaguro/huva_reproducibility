@@ -1,16 +1,625 @@
 ---
-title: "Figure 4 - huva"
+title: "Figure 4 - *huva*"
 author: "Bonaguro et al."
 output: 
   html_document:
-    code_folding: hide
+    code_folding: show
     toc: yes
-    toc_depth: 3
+    toc_depth: 5
     toc_float:
       collapsed: yes
       smooth_scroll: no
+    number_sections: true
 editor_options: 
   chunk_output_type: inline
 ---
 
-This Rmarkdonwn document can be used to reproduce the panels in figure 4 of the manuscript: huva: human variation in gene expression as surrogate for gene function.
+This Rmarkdonwn document can be used to reproduce the panels in figure 4 of the manuscript: *huva: human variation in gene expression as surrogate for gene function*.
+To run this script without any problem of dependencies or conflicts in the installation we suggest to use the docker image we provide (see README file). 
+
+# Figure 4 (Supp. Figures S10, S11)
+In this figure we expand the *huva* approach to the entire trascriptome. We first run an *huva experiment* for all present genes in the 500FG dataset and later explore it, fist manually and later with the use of a co-expression network analysis (CoCena).
+
+## Loading required packages
+```{r, message = FALSE, warning = FALSE}
+library(ggplot2)
+library(clusterProfiler) # version 3.12.0
+library(combinat)
+library(ComplexHeatmap)
+library(dplyr)
+library(ggplot2) 
+library(graphics)
+library(grDevices)
+library(grid)
+library(igraph)
+library(knitr)
+library(pcaGoPromoter.Hs.hg19)
+library(pheatmap)
+library(purrr)
+library(RColorBrewer)
+library(stringi)
+library(tidyr)
+library(tidyverse)
+library(utils)
+library(ggnetwork)        
+library(intergraph)      
+library(MCDA)
+library(reactome.db)
+library(ReactomePA)
+library(biomaRt)
+library(org.Hs.eg.db) # version 3.8.2
+library(Hmisc)
+library(gtools)
+```
+
+## Costum Functions
+```{r}
+source("./source/costum_functions.R")
+```
+
+## Loading of the dataset
+The calculation of the *huva experiment* was performed with a legacy version of *huva* (v 0.1.1), the function used can be found loaded in the envoiroment (calculate_network). Here we will simply load the calculated dataset to keep calculation time short. The result of the caclulation with the current version of *huva* is identical.
+```{r}
+load("./data/network_data.RData")
+```
+
+## Manual analysis
+
+### Gene involved in Monocytes biology
+We where fist interested in the analysis of genes strongly influencing the number of circulating monocytes. We visualized them as volcano plot according to the result of the *huva experiment*
+
+#### Plot
+```{r}
+vulcano_cell_type(x = "Monocytes (CD14+)", y = "pval Monocytes (CD14+)") +
+  ylab("-log10(p value)") + 
+  theme(legend.position = "none") +
+  ggtitle("Fig. 4b - Volcano Monocytes")
+```
+
+```{r}
+part1 <- list()
+
+part1$CD14_spec <- intersect(row.names(FG500_bin$cell_fc[FG500_bin$cell_fc$`Monocytes (CD14+)`<1,]),
+                            row.names(FG500_bin$cell_pval[FG500_bin$cell_pval$`Monocytes (CD14+)`<0.05,]))
+
+top_genes_plot(data =log2(FG500_bin$cell_fc)*-log10(FG500_bin$cell_pval), 
+               list = part1$CD14_spec, 
+               paramiter = "Monocytes (CD14+)", 
+               fill = "Monocytes (CD14+)", 
+               title = "Fig 4c - Top 20 - Monocytes", 
+               top_n = 20, decreasing = F, log_trans=F) +
+               theme(legend.position = "none") +
+               ylab("log2(FC)*-log10(p val)") +
+               xlab("")
+```
+
+### Gene involved in IFNg secretion
+
+#### Plot
+```{r, message=F}
+vulcano_cytokine_type(x = "IFNy_PHA_WB_48h", y = "pval IFNy_PHA_WB_48h") +
+  ylab("-log10(p value)") +
+  theme(legend.position = "none") +
+  ggtitle("Fig. S10b - Volcano IFNg")
+```
+
+```{r}
+part1$IFN_spec <- intersect(row.names(FG500_bin$cyto_fc[FG500_bin$cyto_fc$IFNy_PHA_WB_48h<1,]),
+                            row.names(FG500_bin$cyto_pval[FG500_bin$cyto_pval$IFNy_PHA_WB_48h<0.05,]))
+
+top_genes_plot(data =log2(FG500_bin$cyto_fc)*-log10(FG500_bin$cyto_pval), 
+               list = part1$IFN_spec, 
+               paramiter = "IFNy_PHA_WB_48h", 
+               fill = "IFNy_PHA_WB_48h", 
+               title = "Fig. S10c - Top20 - IFNg", 
+               top_n = 20, decreasing = F, log_trans=F) +
+               theme(legend.position = "none") +
+               ylab("log2(FC)*-log10(p val)") +
+               xlab("")
+```
+
+## CoCena Cell counts
+We will now explore the result of the transcriptome-wide *huva expreiment* we used the Co-expression network analysis tool CoCena2. We generate first a network of *huva experiments* for the cell counts to identify main regulators for each cell type.
+
+### Data Preparation
+We here load the previously calculated *huva experiment* results. As robust metric for the calculation of the network we used the product of the log2 fold change and the negative log 10 p value fo the comparison.We also inverted the sign of the result, as described in the manuscript, to ease the interpretation of the results (a negative values represent a negative impact on a specific cell type/cytokine).
+
+```{r}
+load("./data/network_data.RData")
+
+df <- -(log2(FG500_bin$cell_fc)*-log10(FG500_bin$cell_pval))
+
+count_file_name <- df
+
+count_file_name <- count_file_name[, c(1,14,27,33,53,59)]
+
+info_dataset_name <- data.frame(gene=colnames(count_file_name))
+info_dataset_name$data_type <- "cell_count"
+rownames(info_dataset_name) <- info_dataset_name$gene
+
+info_dataset_name$group <- info_dataset_name$gene
+
+rm(df)
+```
+
+### Settings of the analysis
+```{r}
+working_directory = "./"
+
+topvar_genes = 3000
+
+voi = "group"
+
+TF_list_name = "TFcat.txt"
+gmtfile_name_hallmarks = "h.all.v6.1.symbols.gmt"
+gmtfile_name_go = "c5.bp.v7.0.symbols.gmt"
+gmtfile_name_kegg = "c2.cp.kegg.v7.0.symbols.gmt"
+gmtfile_name_reactome = "c2.cp.reactome.v7.0.symbols.gmt"
+
+organism = "human"
+
+min_corr=0.5
+range_cutoff_length=1000
+print_distribution_plots = FALSE
+
+min_nodes_number_for_network=20 
+min_nodes_number_for_cluster=20
+
+data_in_log=T
+
+range_GFC=2.0
+
+layout_algorithm = "layout_with_fr"  
+```
+
+#### References for functional enrichment
+```{r echo=TRUE, results='hide', message=FALSE}
+mart <- biomaRt::useMart("ensembl")
+mart <- biomaRt::listDatasets(mart) 
+human <- biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl") 
+mouse <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl") 
+
+count_table <- count_file_name
+
+universe_Entrez <- clusterProfiler:: bitr(row.names(count_table), 
+                                         fromType="SYMBOL", 
+                                         toType="ENTREZID", 
+                                         OrgDb="org.Hs.eg.db", 
+                                         drop = T)
+
+info_dataset <- info_dataset_name
+
+TF_list <- read.delim(paste0(working_directory, "reference_files/", TF_list_name),
+                      header=TRUE,
+                      check.names=F)
+
+gmtfile_hallmarks <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_hallmarks))
+gmtfile_go <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_go))
+gmtfile_kegg <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_kegg))
+gmtfile_reactome <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_reactome))
+```
+
+### Filtering the data
+We filter tha data here for the top 3000 most variable *huva experiments*
+```{r}
+ds = count_table[order(apply(count_table,1,var), decreasing=T),]
+dd2 <- head(ds,topvar_genes)
+dd2 = t(dd2)
+```
+
+### Correlation and cut-off calculation
+```{r}
+source(paste0(working_directory,"source/", "correlation_actions.R"))
+
+source(paste0(working_directory,"source/", "obtain_cutoff_stats.R"))
+
+cutoff_stats = do.call("rbind", lapply(X = range_cutoff,
+                                       FUN = cutoff_prep,
+                                       corrdf_r = correlation_df_filt,
+                                       print.all.plots = print_distribution_plots))
+
+source(paste0(working_directory,"source/", "optimal_cutoff.R"))
+```
+
+### Data filtering based on correlation cut off
+```{r}
+optimal_cutoff = calculated_optimal_cutoff
+
+cutoff_wd <- paste0("Cell_count_",optimal_cutoff, "_", topvar_genes)
+if(!cutoff_wd %in% list.dirs(working_directory)) {
+dir.create(paste0(working_directory,cutoff_wd))}
+
+stats_optimal_cutoff <- cutoff_stats[cutoff_stats$cutoff == optimal_cutoff, c("degree", "Probs")]
+
+filt_cutoff_data = correlation_df_filt %>% dplyr::filter(rval > optimal_cutoff)
+filt_cutoff_graph = igraph::graph_from_data_frame(filt_cutoff_data,directed=FALSE)
+filt_cutoff_counts = ds[row.names(ds) %in% names(V(filt_cutoff_graph)),]
+corresp_info = info_dataset[rownames(dd2)%in%rownames(info_dataset),]
+
+print(paste("After using the optimal cutoff of",optimal_cutoff, "the number of edges =", 
+            nrow(filt_cutoff_data), "and the number of nodes =", nrow(filt_cutoff_counts)))
+```
+
+### GFC calculation 
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/", "GFC_calculation.R" ))
+
+GFC <- GFC_calculation(voi_id = voi)
+
+GFC_all_samples <- GFC_calculation(voi_id = "gene")
+```
+
+### Fig 4d - Clustering
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/", "cluster_calculation.R" ))
+
+cluster_information <- cluster_calculation(igraph = filt_cutoff_graph,
+                                           cluster_algo = "auto",
+                                           no_of_iterations = 10,
+                                           max_cluster_count_per_gene = 10,
+                                           min_cluster_size = min_nodes_number_for_cluster,
+                                           GFC = GFC)
+
+cluster_information_all <- cluster_calculation(igraph = filt_cutoff_graph,
+                                           cluster_algo = "auto",
+                                           no_of_iterations = 10,
+                                           max_cluster_count_per_gene = 10,
+                                           min_cluster_size = min_nodes_number_for_cluster,
+                                           GFC = GFC_all_samples)
+```
+
+```{r}
+source(paste0(working_directory,"source/", "heatmap_clusters.R" ))
+
+heatmap_cluster <- heatmap_clusters(data = cluster_information, cluster_cols = T)
+```
+
+
+### Network generation
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/", "network_generation.R" ))
+
+return_network <- network_layout(igraph.object = filt_cutoff_graph,
+                                 use.layout = layout_algorithm,                        
+                                 min.nodes.number = min_nodes_number_for_network)   
+
+igraph_object <- return_network$graph_object
+layout_matrix <- return_network$layout
+
+node_attributes <- node_information(igraph.object = igraph_object,               
+                                    data_df = cluster_information,
+                                    GFC_df = GFC,
+                                    TF_df = TF_list,
+                                    hallmark_df = gmtfile_hallmarks,
+                                    go_df = gmtfile_go,
+                                    kegg_df = gmtfile_kegg,
+                                    reactome_df = gmtfile_reactome,
+                                    org = organism)
+
+network_object <- generate_network_object(graph_object = igraph_object,
+                                          use_layout = layout_matrix)
+```
+
+### Fig. 4e/f - Network visualization 
+```{r}
+source(paste0(working_directory,"source/", "network_visualization.R" ))
+
+network_cluster <- visualize_network(network = network_object,
+                                     color.by = "cluster",
+                                     select.cluster = NULL,
+                                     plot.subnetwork = NULL,
+                                     gene.label = NULL,
+                                     use.layout = layout_algorithm,
+                                     save.pdf=F)
+print(network_cluster)
+```
+
+```{r}
+source(paste0(working_directory,"source/", "network_visualization.R" ))
+
+network_GFC <- GFC_colored_network(network = network_object,
+                                   select.cluster = NULL,
+                                   plot.subnetwork = NULL,
+                                   gene.label = NULL,
+                                   use.layout = layout_algorithm,
+                                   save.pdf = F,
+                                   save.single.pdf = F)
+
+gridExtra::marrangeGrob(grobs = network_GFC, ncol = 1, nrow = 1)
+```
+
+#### Fig S12b - STAT1 in the network
+```{r, message=F}
+source(paste0(working_directory,"source/", "network_visualization.R" ))
+
+STAT1 <- visualize_network(network = network_object,
+                                      color.by = "cluster", 
+                                      select.cluster = c("khaki"),
+                                      gene.label = c("STAT1"), 
+                                      plot.subnetwork = NULL, 
+                                      use.layout = layout_pers, 
+                                      save.pdf = F) 
+print(STAT1)
+```
+
+
+### Fig. 4g - Cluster Profiler 
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/","clusterprofiler_autoCena.R"))
+
+
+clust_prof= clusterprofiler_autoCena(cluster_data = cluster_information,
+                                     cutoff_wd = cutoff_wd,
+                                     originalwd = working_directory,
+                                     chosen_cutoff = optimal_cutoff,
+                                     group = voi)
+
+names(clust_prof) <- cluster_information[cluster_information$cluster_included=="yes",]$color
+```
+
+```{r}
+source("./source/plot_selected_GOEA.R")
+```
+
+## CoCena Cytokines
+
+### Data Preparation
+```{r}
+load("./data/network_data.RData")
+
+df <- -(log2(FG500_bin$cyto_fc)*-log10(FG500_bin$cyto_pval))
+
+count_file_name <- df
+
+info_dataset_name <- data.frame(gene=colnames(count_file_name))
+info_dataset_name$data_type <- "cytokines"
+rownames(info_dataset_name) <- info_dataset_name$gene
+
+info_dataset_name$group <- unlist(lapply(strsplit(rownames(info_dataset_name), "_"), `[[`, 1))
+info_dataset_name$stim <- unlist(lapply(strsplit(rownames(info_dataset_name), "_"), `[[`, 2))
+info_dataset_name$time <- unlist(lapply(strsplit(rownames(info_dataset_name), "_"), `[[`, 4))
+
+rm(df)
+```
+
+### Settings of the analysis     
+```{r}
+working_directory = "./"
+
+topvar_genes = 3000
+
+voi = "group"
+
+TF_list_name = "TFcat.txt"
+gmtfile_name_hallmarks = "h.all.v6.1.symbols.gmt"
+gmtfile_name_go = "c5.bp.v7.0.symbols.gmt"
+gmtfile_name_kegg = "c2.cp.kegg.v7.0.symbols.gmt"
+gmtfile_name_reactome = "c2.cp.reactome.v7.0.symbols.gmt"
+
+organism = "human"
+
+min_corr=0.5
+range_cutoff_length=1000
+print_distribution_plots = FALSE
+
+min_nodes_number_for_network=20 
+min_nodes_number_for_cluster=20
+
+data_in_log=T
+
+range_GFC=2.0
+
+layout_algorithm = "layout_with_fr"  
+```
+
+#### References for functional enrichment
+```{r echo=TRUE, results='hide', message=FALSE}
+mart <- biomaRt::useMart("ensembl")
+mart <- biomaRt::listDatasets(mart) 
+human <- biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl") 
+mouse <- biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl") 
+
+count_table <- count_file_name
+
+universe_Entrez <- clusterProfiler:: bitr(row.names(count_table), 
+                                         fromType="SYMBOL", 
+                                         toType="ENTREZID", 
+                                         OrgDb="org.Hs.eg.db", 
+                                         drop = T)
+
+info_dataset <- info_dataset_name
+
+TF_list <- read.delim(paste0(working_directory, "reference_files/", TF_list_name),
+                      header=TRUE,
+                      check.names=F)
+
+gmtfile_hallmarks <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_hallmarks))
+gmtfile_go <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_go))
+gmtfile_kegg <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_kegg))
+gmtfile_reactome <- clusterProfiler::read.gmt(paste0(working_directory, "reference_files/", gmtfile_name_reactome))
+```
+
+### Filtering the data
+Also here we take the top 3000 *huva experiments*
+```{r}
+ds = count_table[order(apply(count_table,1,var), decreasing=T),]
+dd2 <- head(ds,topvar_genes)
+dd2 = t(dd2)
+```
+
+### Correlation and cut-off calculation
+```{r}
+source(paste0(working_directory,"source/", "correlation_actions.R"))
+
+source(paste0(working_directory,"source/", "obtain_cutoff_stats.R"))
+
+cutoff_stats = do.call("rbind", lapply(X = range_cutoff,
+                                       FUN = cutoff_prep,
+                                       corrdf_r = correlation_df_filt,
+                                       print.all.plots = print_distribution_plots))
+
+source(paste0(working_directory,"source/", "optimal_cutoff.R"))
+```
+
+### Data filtering based on correlation cut off
+```{r}
+optimal_cutoff = calculated_optimal_cutoff
+
+cutoff_wd <- paste0("Cytokines_",optimal_cutoff, "_", topvar_genes)
+if(!cutoff_wd %in% list.dirs(working_directory)) {
+dir.create(paste0(working_directory,cutoff_wd))}
+
+stats_optimal_cutoff <- cutoff_stats[cutoff_stats$cutoff == optimal_cutoff, c("degree", "Probs")]
+
+filt_cutoff_data = correlation_df_filt %>% dplyr::filter(rval > optimal_cutoff)
+filt_cutoff_graph = igraph::graph_from_data_frame(filt_cutoff_data,directed=FALSE)
+filt_cutoff_counts = ds[row.names(ds) %in% names(V(filt_cutoff_graph)),]
+corresp_info = info_dataset[rownames(dd2)%in%rownames(info_dataset),]
+
+print(paste("After using the optimal cutoff of",optimal_cutoff, "the number of edges =", 
+            nrow(filt_cutoff_data), "and the number of nodes =", nrow(filt_cutoff_counts)))
+```
+
+### GFC calculation
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/", "GFC_calculation.R" ))
+
+GFC <- GFC_calculation(voi_id = voi)
+
+GFC_all_samples <- GFC_calculation(voi_id = "stim")
+```
+
+### Clustering
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/", "cluster_calculation.R" ))
+
+cluster_information <- cluster_calculation(igraph = filt_cutoff_graph,
+                                           cluster_algo = "auto",
+                                           no_of_iterations = 10,
+                                           max_cluster_count_per_gene = 10,
+                                           min_cluster_size = min_nodes_number_for_cluster,
+                                           GFC = GFC)
+```
+
+#### Fig. S10d
+```{r}
+source(paste0(working_directory,"source/", "heatmap_clusters.R" ))
+
+heatmap_cluster <- heatmap_clusters(data = cluster_information, cluster_cols = T)
+```
+
+```{r echo=TRUE, results='hide', message=FALSE}
+cluster_information_all <- cluster_calculation(igraph = filt_cutoff_graph,
+                                           cluster_algo = "auto",
+                                           no_of_iterations = 10,
+                                           max_cluster_count_per_gene = 10,
+                                           min_cluster_size = min_nodes_number_for_cluster,
+                                           GFC = GFC_all_samples)
+```
+
+#### Fig. S11a
+```{r}
+source(paste0(working_directory,"source/", "heatmap_clusters.R" ))
+
+heatmap_cluster_all_samples <- heatmap_clusters(data = cluster_information_all, cluster_cols = T)
+```
+
+### Network generation
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/", "network_generation.R" ))
+
+return_network <- network_layout(igraph.object = filt_cutoff_graph,
+                                 use.layout = layout_algorithm,                        
+                                 min.nodes.number = min_nodes_number_for_network)   
+
+igraph_object <- return_network$graph_object
+layout_matrix <- return_network$layout
+
+node_attributes <- node_information(igraph.object = igraph_object,               
+                                    data_df = cluster_information,
+                                    GFC_df = GFC,
+                                    TF_df = TF_list,
+                                    hallmark_df = gmtfile_hallmarks,
+                                    go_df = gmtfile_go,
+                                    kegg_df = gmtfile_kegg,
+                                    reactome_df = gmtfile_reactome,
+                                    org = organism)
+
+network_object <- generate_network_object(graph_object = igraph_object,
+                                          use_layout = layout_matrix)
+
+node_attributes <- node_information(igraph.object = igraph_object,               
+                                    data_df = cluster_information,
+                                    GFC_df = GFC_all_samples,
+                                    TF_df = TF_list,
+                                    hallmark_df = gmtfile_hallmarks,
+                                    go_df = gmtfile_go,
+                                    kegg_df = gmtfile_kegg,
+                                    reactome_df = gmtfile_reactome,
+                                    org = organism)
+
+network_object_all_samples <- generate_network_object(graph_object = igraph_object,
+                                          use_layout = layout_matrix)
+```
+
+### Fig. S10e/f - Network visualization
+```{r}
+source(paste0(working_directory,"source/", "network_visualization.R" ))
+
+network_cluster <- visualize_network(network = network_object,
+                                     color.by = "cluster",
+                                     select.cluster = NULL,
+                                     plot.subnetwork = NULL,
+                                     gene.label = NULL,
+                                     use.layout = layout_algorithm,
+                                     save.pdf=F)
+print(network_cluster)
+```
+
+```{r}
+source(paste0(working_directory,"source/", "network_visualization.R" ))
+
+network_GFC <- GFC_colored_network(network = network_object,
+                                   select.cluster = NULL,
+                                   plot.subnetwork = NULL,
+                                   gene.label = NULL,
+                                   use.layout = layout_algorithm,
+                                   save.pdf = F,
+                                   save.single.pdf = F)
+
+gridExtra::marrangeGrob(grobs = network_GFC, ncol = 1, nrow = 1)
+```
+
+### Fig. S10g - Cluster Profiler
+```{r echo=TRUE, results='hide', message=FALSE}
+source(paste0(working_directory,"source/","clusterprofiler_autoCena.R" ))
+
+
+clust_prof= clusterprofiler_autoCena(cluster_data = cluster_information,
+                                     cutoff_wd = cutoff_wd,
+                                     originalwd = working_directory,
+                                     chosen_cutoff = optimal_cutoff,
+                                     group = voi)
+
+names(clust_prof) <- cluster_information[cluster_information$cluster_included=="yes",]$color
+```
+
+```{r}
+source("./source/plot_selected_GOEA_cyto.R")
+```
+
+# Clean the environment
+```{r}
+source("./source/clean.R")
+```
+
+# Session info
+```{r}
+info <- sessionInfo()
+info
+```
+
+# Save environment
+```{r}
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_4.RData", sep = ""))
+```

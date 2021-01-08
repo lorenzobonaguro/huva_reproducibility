@@ -21,7 +21,7 @@ To run this script without any problem of dependencies or conflicts in the insta
 In the second figure we test the performance of *huva* in the imputation of phenotype and function of a well-known gene. We focus figure 2 and S3 in the analysis of *MyD88*, gene reported several time as adaptor protein for the TLR signalling pathway. In Figure S4 we extend the analysis to other genes of known function (*AKT*, *MAPK3*
 
 ## Loading required packages
-```{r}
+```{r, message = FALSE, warning = FALSE}
 library(huva)
 library(huva.db)
 library(tidyverse)
@@ -107,6 +107,7 @@ ggqqplot(MYD88$overview$expression$FG500_PBMC$expression) + theme_bw() + theme(a
 
 shapiro.test(MYD88$overview$expression$FG500_PBMC$expression)
 ```
+
 #### HIGH and LOW
 In the huva experiment we define two groups with high and low expression of MyD88, here we pot in a boxplot the expression of our gene of interest in the two groups.
 
@@ -506,5 +507,5 @@ info
 
 # Save environment
 ```{r}
-save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
+# save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
 ```

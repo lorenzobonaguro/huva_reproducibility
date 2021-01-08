@@ -1,5 +1,5 @@
 # *huva*: *hu*man *va*riation in gene expression as surrogate for gene function 
-### *Lorenzo Bonaguro, Jonas Schulte-Schrepping, Caterina Carraro, Laura Sun, Benedikt Reiz, Ioanna Gemünd, Adem Saglam, Leo A. B. Joosten, Frank L. van de Veerdonk, Mihai G. Netea, Kristian Händler, Thomas Ulas, Joachim L. Schultze, Anna C. Aschenbrenner*
+### *Lorenzo Bonaguro, Jonas Schulte-Schrepping, Caterina Carraro, Laura Sun, Benedikt Reiz, Ioanna Gemünd, Adem Saglam, Peer Arts, Alexander Hoischen, Leo A. B. Joosten, Frank L. van de Veerdonk, Mihai G. Netea, Kristian Händler, Sach Mukherjee, Thomas Ulas, Joachim L. Schultze, Anna C. Aschenbrenner*
 
 ![image](./images/abstract.png)
 
@@ -31,7 +31,7 @@ cd huva_reproducibility
 docker build -t reproduce .
 
 # Run a container
-docker run -dp 8787:8787 -e USER=mariorossi -e PASSWORD=mariorossi --name rep_huva -v 'your_directory':/data/ reproduce
+docker run -dp 8787:8787 -e USER=mariorossi -e PASSWORD=mariorossi --name rep_huva -v 'your_directory':/home/mariorossi/data/ reproduce
 ```
 ### Open the RStudio session
 Enter in your browser `localhost:8787`, this should start a Rstudio session you can use to explore the code and reproduce the analysis.

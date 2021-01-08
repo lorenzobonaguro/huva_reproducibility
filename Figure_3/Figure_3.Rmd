@@ -1,16 +1,954 @@
 ---
-title: "Figure 3 - huva"
+title: "Figure 3 - *huva*"
 author: "Bonaguro et al."
 output: 
   html_document:
-    code_folding: hide
+    code_folding: show
     toc: yes
-    toc_depth: 3
+    toc_depth: 5
     toc_float:
       collapsed: yes
       smooth_scroll: no
+    number_sections: true
 editor_options: 
   chunk_output_type: inline
 ---
 
-This Rmarkdonwn document can be used to reproduce the panels in figure 3 of the manuscript: huva: human variation in gene expression as surrogate for gene function.
+This Rmarkdonwn document can be used to reproduce the panels in figure 3 of the manuscript: *huva: human variation in gene expression as surrogate for gene function*.
+To run this script without any problem of dependencies or conflicts in the installation we suggest to use the docker image we provide (see README file). 
+
+# Figure 3 (Supp. Figures S5, S6, S7, S8, S9)
+In this figure we evaluate the robustness of the *huva* methods. We will perform here a series of experiment to show the robustness and valitidy of our approach.
+
+## Loading required packages
+```{r, message = FALSE, warning = FALSE}
+library(huva)
+library(huva.db)
+library(ggplot2)
+library(tidyverse)
+library(reshape2)
+library(limma)
+library(fgsea)
+library(Rmisc)
+library(ggpubr)
+library(pheatmap)
+library(viridis)
+library(foreach)
+library(ggsci)
+```
+
+## Costum Functions
+```{r}
+source("./source/costum_functions.R")
+```
+
+## Setting seed
+```{r}
+set.seed(91)
+```
+
+## Parallel computing
+Part of the simulation executed here is calculated in parallel to lower the computational time, this is not necessary, the user can decide to activate or not this feature, changing the parameter 'par_cal' to TRUE
+```{r, message = FALSE, warning = FALSE}
+if (require(doMC) == F) {
+  BiocManager::install("doMC", version = "3.12", update = F)
+}
+
+library(doMC)
+
+par_cal <- FALSE 
+
+# Devine the number of workers for the parallel computing
+workers <- 4
+```
+
+
+## Relevance of sample selection
+We here wannt to compare the result of an huva experiment, where the comparison if between two groups characterized by low or high expression of a gene of interest, and a random selection of samples in the two experimental groups. We defined the *run_huva_experiment_random_sample* function which does not select the samples based on the expression of the gene of interest but only randomize the two experimental groups of equal size to the original *huva* groups. Here for example a randomized huva experiment was perfomed of CRELD1 giving almost no difference in the expression of the GOI (boxplot).
+```{r}
+binned_random <- run_huva_experiment_random_sample(data = huva.db, 
+                                                    gene = "CRELD1", 
+                                                    quantiles = 0.10, 
+                                                    gs_list = hallmarks_V7.2,
+                                                    summ = T, 
+                                                    datasets_list = c("FG500"), 
+                                                    adjust.method = "BH")
+
+plot_binned_gene(goi = "CRELD1", huva_experiment = binned_random)$PBMC + theme_bw() +theme(aspect.ratio = 2) + 
+  expand_limits(y = 7) + ggtitle("Randomized huva experiment")
+```
+
+### Number of random permutation
+select the number of permutation in the experiment, for simplicity I selected the same number of samples in the dataset
+```{r}
+n.random <- round(dim(huva.db$FG500$data$PBMC)[2])
+```
+
+
+### Running the experiment
+I will now compare the result of the real *huva experiment* with the the result of the randomly selected samples. This same analysis will be performed with both a gene showing high and low variance across the dataset.
+```{r calculate the variance}
+variance <- RowVar(huva.db$FG500$data$PBMC)
+variance <- variance[order(variance, decreasing = T)]
+```
+
+#### Gene with low variance
+```{r, echo=TRUE, results='hide'}
+# Container for the results
+random_low <- matrix(nrow = n.random+1, ncol = 3)
+colnames(random_low) <- c("logFC", "p.val", "n.DEgenes")
+
+# The randomized experiment
+for (i in 1:n.random) {
+  binned_random <- run_huva_experiment_random_sample(data = huva.db, 
+                                                    gene = "CRELD1", 
+                                                    quantiles = 0.10, 
+                                                    gs_list = hallmarks_V7.2,
+                                                    summ = F, 
+                                                    datasets_list = c("FG500"), 
+                                                    adjust.method = "BH")
+
+  logFC <- binned_random$FG500$DE_genes$PBMC["CRELD1",]$logFC
+  p.val <- binned_random$FG500$DE_genes$PBMC["CRELD1",]$P.Value
+  n.DEgenes <- sum(binned_random$FG500$DE_genes$PBMC$adj.P.Val <=0.05)
+  
+  random_low[i,] <- c(logFC, p.val, n.DEgenes) 
+}
+
+# The original experiment
+binned_dataset <- run_huva_experiment(data = huva.db, 
+                                      gene = "CRELD1", 
+                                      quantiles = 0.10, 
+                                      gs_list = hallmarks_V7.2,
+                                      summ = F, 
+                                      datasets_list = c("FG500"), 
+                                      adjust.method = "BH")
+
+logFC <- binned_dataset$FG500$DE_genes$FG500_PBMC["CRELD1",]$logFC
+p.val <- binned_dataset$FG500$DE_genes$FG500_PBMC["CRELD1",]$P.Value
+n.DEgenes <- sum(binned_dataset$FG500$DE_genes$FG500_PBMC$adj.P.Val <=0.05)
+
+# Preparation of the table
+random_low[n.random+1,] <- c(logFC, p.val, n.DEgenes)
+
+random_low <- as.data.frame(random_low)
+
+random_low$type <- "random"
+
+random_low$type[dim(random_low)[1]] <- "real"
+
+random_low$absFC <- abs(random_low$logFC)
+
+random_low$neglogpval <- -log10(random_low$p.val)
+```
+
+### Gene with high variance
+```{r, echo=TRUE, results='hide', message=FALSE}
+# Container for the results
+random_high <- matrix(nrow = n.random+1, ncol = 3)
+colnames(random_high) <- c("logFC", "p.val", "n.DEgenes")
+
+# The randomized experiment
+for (i in 1:n.random) {
+  binned_random <- run_huva_experiment_random_sample(data = huva.db, 
+                                                    gene = "SLC12A1", 
+                                                    quantiles = 0.10, 
+                                                    gs_list = hallmarks_V7.2,
+                                                    summ = F, 
+                                                    datasets_list = c("FG500"), 
+                                                    adjust.method = "BH")
+
+  logFC <- binned_random$FG500$DE_genes$PBMC["SLC12A1",]$logFC
+  p.val <- binned_random$FG500$DE_genes$PBMC["SLC12A1",]$P.Value
+  n.DEgenes <- sum(binned_random$FG500$DE_genes$PBMC$adj.P.Val <=0.05)
+  
+  random_high[i,] <- c(logFC, p.val, n.DEgenes) 
+}
+
+# The original experiment
+binned_dataset <- run_huva_experiment(data = huva.db, 
+                                      gene = "SLC12A1", 
+                                      quantiles = 0.10, 
+                                      gs_list = hallmarks_V7.2,
+                                      summ = T, 
+                                      datasets_list = c("FG500"), 
+                                      adjust.method = "BH")
+
+logFC <- binned_dataset$FG500$DE_genes$FG500_PBMC["SLC12A1",]$logFC
+p.val <- binned_dataset$FG500$DE_genes$FG500_PBMC["SLC12A1",]$P.Value
+n.DEgenes <- sum(binned_dataset$FG500$DE_genes$FG500_PBMC$adj.P.Val <=0.05)
+
+# Preparation of the table
+random_high[n.random+1,] <- c(logFC, p.val, n.DEgenes)
+
+random_high <- as.data.frame(random_high)
+
+random_high$type <- "random"
+
+random_high$type[dim(random_high)[1]] <- "real"
+
+random_high$absFC <- abs(random_high$logFC)
+
+random_high$neglogpval <- -log10(random_high$p.val)
+
+# Merging the two experiments
+ds_low <- melt(random_low)
+
+ds_high <- melt(random_high)
+
+ds_low$data_type <- "low_variance"
+
+ds_high$data_type <- "high_variance"
+
+ds_random_sampling <- rbind(ds_low, ds_high)
+
+ds_random_sampling$type <- factor(ds_random_sampling$type, levels = c("real", "random"))
+
+ds_random_sampling <- ds_random_sampling[!ds_random_sampling$variable %in% c("logFC", "p.val"),]
+
+ds_random_sampling$experiment <- "sample_random"
+
+ds_random_sampling$variable <- factor(ds_random_sampling$variable, 
+                                      levels = c("absFC", "neglogpval", "n.DEgenes"), 
+                                      labels = c("absolute FC", "-log10p value", "n. DE genes"))
+
+rm(binned_dataset, binned_random, ds_high, ds_low, random_high, random_low, i, logFC, n.DEgenes, n.random, p.val, variance)
+```
+
+#### Plots
+```{r}
+ggplot(ds_random_sampling[ds_random_sampling$data_type == "high_variance",], aes(x=experiment, y=value, fill=type)) +
+  geom_point(shape=21, position = position_dodge2(.4), size=3) +
+  facet_wrap(~variable, scales = "free") +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) +
+  ggtitle("Figure 3b and 3c")
+```
+
+```{r}
+ggplot(ds_random_sampling[ds_random_sampling$data_type == "low_variance",], aes(x=experiment, y=value, fill=type)) +
+  geom_point(shape=21, position = position_dodge2(.4), size=3) +
+  facet_wrap(~variable, scales = "free") +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) +
+  ggtitle("Figure S5a and S5b")
+```
+
+## Overlap of DE genes across experiments
+We now want to evaluate what is the overlap in the DE genes calculated with an *huva experiment* across 1593 genes of interest in the 500FG dataset.
+
+### Random selection of genes for the analysis
+Random selection of the 1593 genes used for the experiment.
+```{r}
+selection <- sample(rownames(huva.db$FG500$data$PBMC), 
+                    round(dim(huva.db$FG500$data$PBMC)[1]*0.1), replace = F)
+```
+
+### Prepatation of bias dataset
+```{r}
+bias_ds <- huva.db$FG500$data$PBMC
+
+bias_ds <- t(seq(1, 1.1, length.out = dim(bias_ds)[2])*t(bias_ds))
+
+huva_default_bias <- huva.db
+
+huva_default_bias$FG500$data[["PBMC"]] <- bias_ds
+
+rm(bias_ds)
+```
+
+#### HM visualization of the bias
+```{r}
+pheatmap(huva.db$FG500$data$PBMC[1:100,], 
+         cluster_rows = F, cluster_cols = F, 
+         scale = "row", 
+         border_color = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(100), 
+         main = "Figure S6b - original dataset", 
+         show_rownames = FALSE, 
+         show_colnames = FALSE, 
+         breaks = seq(-5,5, length.out = 100), 
+         cellwidth = 4, cellheight = 3)
+
+pheatmap(huva_default_bias$FG500$data$PBMC[1:100,], 
+         cluster_rows = F, cluster_cols = F, 
+         scale = "row", 
+         border_color = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(100), 
+         main = "Figure S6b - bias dataset", 
+         show_rownames = FALSE, 
+         show_colnames = FALSE, 
+         breaks = seq(-5,5, length.out = 100),
+         cellwidth = 4, cellheight = 3)
+```
+#### Boxplot visualization of the bias
+```{r}
+df_orignal <- melt(huva.db$FG500$data$PBMC)
+df_orignal$data_type <- "original"
+df_bias <- melt(huva_default_bias$FG500$data$PBMC)
+df_bias$data_type <- "bias"
+
+bias_vis_df <- rbind(df_orignal, df_bias)
+bias_vis_df$data_type <- factor(bias_vis_df$data_type, levels = c("original", "bias"))
+
+# sample onlx 10 of the sample of the dataset to display
+set.seed(1)
+
+ggplot(bias_vis_df[bias_vis_df$Var2 %in% sample(levels(bias_vis_df$Var2), size = 5),], aes(x=Var2, y=value, fill=data_type)) +
+  geom_boxplot() + 
+  scale_y_continuous(limits = c(0,20)) + 
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) + 
+  theme_bw() +
+  ggtitle("Figure S6c - random selection of 5 samples to show the bias") + theme(aspect.ratio = 2/5)
+
+rm(df_bias, df_orignal, bias_vis_df)
+```
+
+### Getting the DE genes overlap
+Here we source the function to calculate the overlap in DE genes. First with the real 500FG datased and second with the biased dataset.
+```{r, echo=TRUE, results='hide', message=FALSE}
+source("./source/DE_overlap_orig.R")
+```
+
+```{r}
+print("Value distribution of the original dataset")
+summary(DE_comp_original$overlap)
+```
+
+```{r, echo=TRUE, results='hide', message=FALSE}
+source("./source/DE_overlap_bias.R")
+```
+
+```{r}
+print("Value distribution of the biased dataset")
+summary(DE_comp_bias$overlap)
+```
+
+#### Visualize the DE genes overlap
+```{r}
+DE_comp_original$data_type <- "original"
+DE_comp_bias$data_type <- "bias"
+DE_comp_merge <- rbind(DE_comp_original, DE_comp_bias)
+
+DE_comp_merge$data_type <- factor(DE_comp_merge$data_type, levels = c("original", "bias"))
+
+ggplot(DE_comp_merge, aes(x=data_type, y=overlap, fill=data_type)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) + 
+  theme_bw() + theme(aspect.ratio = 2) +
+  xlab("")+
+  ylab("DE genes overlap (fraction)") +
+  ggtitle("Figure 3e - Overlap DE genes - boxplot")
+
+t.test(DE_comp_merge[DE_comp_merge$data_type=="original",]$overlap, 
+       DE_comp_merge[DE_comp_merge$data_type=="bias",]$overlap, paired = F)
+
+rm(DE_comp_merge)
+```
+
+```{r}
+tmp <- DE_comp_original_matrix
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         border_color = NA, na_col = NA, 
+         main = "Figure 3f - Original dataset")
+
+rm(tmp)
+```
+
+```{r}
+tmp <- DE_comp_bias_matrix
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         border_color = NA, na_col = NA, 
+         main = "Figure 3f - Bias dataset")
+
+rm(tmp)
+```
+
+## Correlation of the gene ranks
+We now want to evaluate what is Pearson's correlation between *huva experiment* across 1593 genes of interest in the 500FG dataset.
+
+### Getting the rank comparison
+Here we source the function for the calculation of the pair-wise correlation coefficient. First for the original 500FG dataset and second for the biased dataset.
+
+**NOTE:** This calculation required long time for the pair-wise comparisons, we provide the pre calculated tables to reproduce the plot in the manuscript and the original code.
+```{r, echo=TRUE, results='hide', message=FALSE}
+# source("./source/Rank_overlap_orig.R")
+
+rank_comp_origina <- readRDS("./data/rank_comp_orig.rds")
+rank_comp_origina_matrix <- readRDS("./data/rank_comp_orig_mat.rds")
+```
+
+```{r}
+print("Value distribution of the original dataset")
+summary(rank_comp_origina$overlap)
+```
+
+```{r}
+# source("./source/Rank_overlap_bias.R")
+
+rank_comp_bias <- readRDS("./data/rank_comp_bias.rds")
+rank_comp_bias_matrix <- readRDS("./data/rank_comp_bias_mat.rds")
+```
+
+```{r}
+print("Value distribution of the bias dataset")
+summary(rank_comp_bias$overlap)
+```
+
+#### Visualize the overlap
+```{r}
+rank_comp_origina$data_type <- "original"
+rank_comp_bias$data_type <- "bias"
+rank_comp_merge <- rbind(rank_comp_origina, rank_comp_bias)
+
+rank_comp_merge$data_type <- factor(rank_comp_merge$data_type, levels = c("original", "bias"))
+
+ggplot(rank_comp_merge, aes(x=data_type, y=overlap, fill=data_type)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) + 
+  theme_bw() + theme(aspect.ratio = 2) +
+  xlab("")+
+  ylab("DE genes overlap (fraction)") +
+  ggtitle("Figure S8b - Overlap DE genes - boxplot")
+
+t.test(rank_comp_merge[rank_comp_merge$data_type=="original",]$overlap, 
+       rank_comp_merge[rank_comp_merge$data_type=="bias",]$overlap, paired = F)
+
+rm(rank_comp_merge)
+```
+
+```{r}
+tmp <- rank_comp_origina_matrix
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 10), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         breaks = seq(0, 1, length.out = 10), 
+         border_color = NA, na_col = NA, 
+         main = "Figure S8c - Original dataset")
+
+rm(tmp)
+```
+
+```{r}
+tmp <- rank_comp_bias_matrix
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 10), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         breaks = seq(0, 1, length.out = 10), 
+         border_color = NA, na_col = NA, 
+         main = "Figure S8d - Bias dataset")
+
+rm(tmp)
+```
+
+## Overlap of the samples
+We now want to evaluate in the selection of samples in the HIGH and LOW groups for an *huva experiment* across 1593 genes of interest in the 500FG dataset.
+
+### Calculating the sample overlap
+Here we source the function for the calculation of the overlap. First for the original 500FG dataset and second for the biased dataset.
+```{r, echo=TRUE, results='hide', message=FALSE}
+source("./source/sample_overlap_orig.R")
+```
+
+```{r}
+print("Value distribution of the original dataset - LOW group")
+summary(samples_comp_original_low$overlap)
+
+print("Value distribution of the original dataset - HIGH group")
+summary(samples_comp_original_high$overlap)
+```
+
+```{r, echo=TRUE, results='hide', message=FALSE}
+source("./source/sample_overlap_bias.R")
+```
+
+```{r}
+print("Value distribution of the bias dataset - LOW group")
+summary(samples_comp_bias_low$overlap)
+
+print("Value distribution of the bias dataset - HIGH group")
+summary(samples_comp_bias_high$overlap)
+```
+
+#### Visualize the overlap
+```{r}
+samples_comp_original_low$data_type <- "original"
+samples_comp_bias_low$data_type <- "bias"
+samples_comp_merge_low <- rbind(samples_comp_original_low, samples_comp_bias_low)
+
+samples_comp_merge_low$data_type <- factor(samples_comp_merge_low$data_type, levels = c("original", "bias"))
+
+ggplot(samples_comp_merge_low, aes(x=data_type, y=overlap, fill=data_type)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) + 
+  theme_bw() + theme(aspect.ratio = 2) +
+  xlab("")+
+  ylab("samples overlap (fraction)") +
+  ggtitle("Figure S7b - Overlap Samples LOW group - boxplot")
+
+t.test(samples_comp_merge_low[samples_comp_merge_low$data_type=="original",]$overlap, 
+       samples_comp_merge_low[samples_comp_merge_low$data_type=="bias",]$overlap, paired = F)
+
+rm(samples_comp_merge_low)
+```
+
+```{r}
+tmp <- samples_comp_original_matrix_low
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         border_color = NA, na_col = NA, 
+         main = "Figure S7c - Original dataset")
+
+rm(tmp)
+```
+
+```{r}
+tmp <- samples_comp_bias_matrix_low
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         na_col = NA, border_color = NA, 
+         main = "Figure S7c - Original dataset")
+
+rm(tmp)
+```
+
+```{r}
+samples_comp_original_high$data_type <- "original"
+samples_comp_bias_high$data_type <- "bias"
+samples_comp_merge_high <- rbind(samples_comp_original_high, samples_comp_bias_high)
+
+samples_comp_merge_high$data_type <- factor(samples_comp_merge_high$data_type, levels = c("original", "bias"))
+
+ggplot(samples_comp_merge_high, aes(x=data_type, y=overlap, fill=data_type)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) + 
+  theme_bw() + theme(aspect.ratio = 2) +
+  xlab("")+
+  ylab("samples overlap (fraction)") +
+  ggtitle("Figure S7b - Overlap Samples HIGH group - boxplot")
+
+t.test(samples_comp_merge_high[samples_comp_merge_high$data_type=="original",]$overlap, 
+       samples_comp_merge_high[samples_comp_merge_high$data_type=="bias",]$overlap, paired = F)
+
+rm(samples_comp_merge_high)
+```
+
+```{r}
+tmp <- samples_comp_original_matrix_high
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         border_color = NA, na_col = NA, 
+         main = "Figure S7e - Original dataset HIGH group")
+
+rm(tmp)
+```
+
+```{r}
+tmp <- samples_comp_bias_matrix_high
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, 
+         show_colnames = F, 
+         cellwidth = 0.15, 
+         cellheight = 0.15, 
+         border_color = NA, na_col = NA, 
+         main = "Figure S7e - Bias dataset HIGH group")
+
+rm(tmp)
+```
+
+#### Random selection of 10 samples
+We compare here the result of the overlap of samples when randomly selecting samples
+```{r}
+source("./source/sample_overlap_random.R")
+```
+
+```{r}
+summary(sample_comp_random$overlap)
+
+ggplot(sample_comp_random, aes(x="random", y=overlap)) +
+  geom_boxplot(fill = "gray") +
+  xlab("")+
+  ylab("samples overlap (fraction)") +
+  theme_bw() + theme(aspect.ratio = 4) + ggtitle("Randoms Sampling Overlap - data not shown")
+```
+
+## Randomization of the signatures
+
+### MYD88
+```{r}
+set.seed(91) 
+
+n.random.sign <- 1000
+
+core <- huva.db::msigdb_V7.2$GSE22935_WT_VS_MYD88_KO_MACROPHAGE_UP
+
+random_sign <- list()
+
+for (i in 1:n.random.sign) {
+  sign <- sample(rownames(huva.db$FG500$data$PBMC), 186, replace = F)
+  random_sign[[paste("random nr. ", i, sep = "")]] <- sign
+}
+random_sign[["core"]] <- core
+
+binned_dataset <- run_huva_experiment(data = huva.db, 
+                                      gene = "MYD88", 
+                                      quantiles = 0.10, 
+                                      gs_list = random_sign,
+                                      summ = F, 
+                                      datasets_list = c("FG500"), 
+                                      adjust.method = "BH")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- c(rep("random", n.random.sign), "real")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- factor(binned_dataset$FG500$gsea$FG500_PBMC$data_type, levels = c("real", "random"))
+
+rm(i, core, n.random.sign, sign, random_sign)
+```
+
+#### Plot
+```{r}
+ggplot(binned_dataset$FG500$gsea$FG500_PBMC, aes(x=NES, y=-log10(pval), size=-log10(pval), fill=data_type))+
+  geom_point(shape=21) +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_x_continuous(limits = c(-3, 3)) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) +
+  ggtitle("Figure 3h - Random gene signatures - MYD88") +
+  scale_y_continuous(limits = c(0,3))
+
+rm(binned_dataset)
+```
+### AKT
+```{r}
+set.seed(91) 
+
+n.random.sign <- 1000
+
+core <- huva.db::msigdb_V7.2$AKT_UP.V1_UP
+
+random_sign <- list()
+
+for (i in 1:n.random.sign) {
+  sign <- sample(rownames(huva.db$FG500$data$PBMC), 138, replace = F)
+  random_sign[[paste("random nr. ", i, sep = "")]] <- sign
+}
+random_sign[["core"]] <- core
+
+binned_dataset <- run_huva_experiment(data = huva.db, 
+                                      gene = "AKT1", 
+                                      quantiles = 0.10, 
+                                      gs_list = random_sign,
+                                      summ = F, 
+                                      datasets_list = c("FG500"), 
+                                      adjust.method = "BH")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- c(rep("random", n.random.sign), "real")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- factor(binned_dataset$FG500$gsea$FG500_PBMC$data_type, levels = c("real", "random"))
+
+rm(i, core, n.random.sign, sign, random_sign)
+```
+
+##### Plot
+```{r}
+ggplot(binned_dataset$FG500$gsea$FG500_PBMC, aes(x=NES, y=-log10(pval), size=-log10(pval), fill=data_type))+
+  geom_point(shape=21) +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_x_continuous(limits = c(-3, 3)) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) +
+  ggtitle("Figure S9a - Random gene signatures - AKT") +
+  scale_y_continuous(limits = c(0,3))
+
+rm(binned_dataset)
+```
+
+### ERK
+```{r}
+set.seed(91) 
+
+n.random.sign <- 1000
+
+core <- huva.db::msigdb_V7.2$GO_ERK1_AND_ERK2_CASCADE
+
+random_sign <- list()
+
+for (i in 1:n.random.sign) {
+  sign <- sample(rownames(huva.db$FG500$data$PBMC), 219, replace = F)
+  random_sign[[paste("random nr. ", i, sep = "")]] <- sign
+}
+random_sign[["core"]] <- core
+
+binned_dataset <- run_huva_experiment(data = huva.db, 
+                                      gene = "MAPK3", 
+                                      quantiles = 0.10, 
+                                      gs_list = random_sign,
+                                      summ = F, 
+                                      datasets_list = c("FG500"), 
+                                      adjust.method = "BH")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- c(rep("random", n.random.sign), "real")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- factor(binned_dataset$FG500$gsea$FG500_PBMC$data_type, levels = c("real", "random"))
+
+rm(i, core, n.random.sign, sign, random_sign)
+```
+
+#### Plot
+```{r}
+ggplot(binned_dataset$FG500$gsea$FG500_PBMC, aes(x=NES, y=-log10(pval), size=-log10(pval), fill=data_type))+
+  geom_point(shape=21) +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_x_continuous(limits = c(-3, 3)) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) +
+  ggtitle("Figure S9b - Random gene signatures - ERK") +
+  scale_y_continuous(limits = c(0,3)) 
+
+rm(binned_dataset)
+```
+
+### STAT1
+```{r}
+set.seed(91) 
+
+n.random.sign <- 1000
+
+core <- huva.db::msigdb_V7.2$GSE40666_WT_VS_STAT1_KO_CD8_TCELL_UP
+
+random_sign <- list()
+
+for (i in 1:n.random.sign) {
+  sign <- sample(rownames(huva.db$FG500$data$PBMC), 195, replace = F)
+  random_sign[[paste("random nr. ", i, sep = "")]] <- sign
+}
+random_sign[["core"]] <- core
+
+binned_dataset <- run_huva_experiment(data = huva.db, 
+                                      gene = "STAT1", 
+                                      quantiles = 0.10, 
+                                      gs_list = random_sign,
+                                      summ = F, 
+                                      datasets_list = c("FG500"), 
+                                      adjust.method = "BH")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- c(rep("random", n.random.sign), "real")
+
+binned_dataset$FG500$gsea$FG500_PBMC$data_type <- factor(binned_dataset$FG500$gsea$FG500_PBMC$data_type, levels = c("real", "random"))
+
+rm(i, core, n.random.sign, sign, random_sign)
+```
+
+#### Plot
+```{r}
+ggplot(binned_dataset$FG500$gsea$FG500_PBMC, aes(x=NES, y=-log10(pval), size=-log10(pval), fill=data_type))+
+  geom_point(shape=21) +
+  theme_bw() + theme(aspect.ratio = 2) +
+  scale_x_continuous(limits = c(-3, 3)) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_fill_manual(values = c("#BC3C29", "#01A087")) +
+  ggtitle("Figure S9c - Random gene signatures - STAT1") +
+  scale_y_continuous(limits = c(0,3))
+
+rm(binned_dataset)
+```
+
+## Variation of the binning values
+
+### Calculation of the experiment
+```{r, echo=TRUE, results='hide', message=FALSE}
+set.seed(91)
+
+MyD88_quant <- optimal_quant(gene_name = "MYD88", FC.Cut = 0)
+```
+
+#### Plot
+```{r}
+MyD88_quant$plot_FC +
+  ggtitle("Fig. S9e - Quantile selection log2 FC") +
+  xlab("quantile") +
+  ylab("log2 fold change") + 
+  scale_fill_manual(values = c("#BC3C29", "#01A087"))
+```
+
+```{r}
+MyD88_quant$plot_adj.P.val +
+  ggtitle("Fig. S9f - Quantile selection -log10 p value") +
+  xlab("quantile") +
+  ylab("-log10 p value") + 
+  scale_fill_manual(values = c("#BC3C29", "#01A087"))
+```
+
+```{r}
+MyD88_quant$plot_result + 
+  scale_x_continuous(limits = c(0.085, 0.4)) +
+  scale_y_continuous(limits = c(0.3, 0.9), breaks = c(0.3, 0.45, 0.6, 0.75, 0.9)) + 
+  geom_smooth(se = FALSE) +
+  ylab("-log10 p value") +
+  xlab("log2 fold change") +
+  ggtitle("Fig. S9g - Quantile selection")
+```
+
+```{r}
+ggplot(MyD88_quant$result, aes(x=logFC, y=n.DE)) +
+  geom_point(shape = 21, size = 3) + theme_bw() +
+  geom_smooth(se = FALSE) + theme(aspect.ratio = 1/5) +
+  scale_x_continuous(limits = c(0.085, 0.4)) + 
+  scale_y_continuous(limits = c(0, 8000)) +
+  ggtitle("Fig. S9g - Quantile selection - Top") +
+  xlab("log2 fold change")
+```
+
+```{r}
+ggplot(MyD88_quant$result, aes(x=-log10(adj.P.val), y=n.DE)) +
+  geom_point(shape = 21, size = 3) + theme_bw() +
+  geom_smooth(se = FALSE) + theme(aspect.ratio = 1/5) +
+  scale_x_continuous(limits = c(0.3, 0.9), breaks = c(0.3, 0.45, 0.6, 0.75, 0.9)) + 
+  scale_y_continuous(limits = c(0, 8000)) +
+  ggtitle("Fig. S9g - Quantile selection - Side") +
+  xlab("-log10 p value")
+```
+### Similarities in the gene ranks
+```{r, echo=TRUE, results='hide', message=FALSE}
+source("./source/Rank_overlap_quant.R")
+```
+
+```{r}
+summary(quantile_overlap_MyD88$correlation)
+
+ggplot(quantile_overlap_MyD88, aes(x=experiment, y=correlation)) +
+  geom_boxplot(outlier.colour = "black", fill = "#C2C2C2") +
+  geom_point(position = position_dodge2(0.4), shape=21, alpha=0.0005) +
+  theme_bw() + theme(aspect.ratio = 4) + 
+  ggtitle("Fig. S9h - Pearson's correlation") + 
+  scale_y_continuous(limits = c(0,1)) +
+  xlab("") +
+  ylab("rank-rank Pearson's correlation (r)")
+
+tmp <- quantile_overlap_MyD88_matrix
+
+for (i in 2:dim(tmp)[2]) {
+  tmp[1:(i-1),i] <- NA
+}
+
+pheatmap(tmp, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = inferno(direction = -1, 50), 
+         show_rownames = F, show_colnames = F, 
+         cellwidth = 4, cellheight = 4, 
+         breaks = seq(0.7,1,length.out = 50), 
+         border_color = NA, na_col = NA, 
+         main = "Fig. S9h -Pearson's correlation")
+
+rm(tmp, i)
+```
+
+# Session info
+```{r}
+info <- sessionInfo()
+info
+```
+
+# Save environment
+```{r}
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_3.RData", sep = ""))
+```

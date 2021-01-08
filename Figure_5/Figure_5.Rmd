@@ -1,16 +1,581 @@
 ---
-title: "Figure 1 - huva"
+title: "Figure 5 - *huva*"
 author: "Bonaguro et al."
 output: 
   html_document:
-    code_folding: hide
+    code_folding: show
     toc: yes
-    toc_depth: 3
+    toc_depth: 5
     toc_float:
       collapsed: yes
       smooth_scroll: no
+    number_sections: true
 editor_options: 
   chunk_output_type: inline
 ---
 
-This Rmarkdonwn document can be used to reproduce the panels in figure 5 of the manuscript: huva: human variation in gene expression as surrogate for gene function.
+This Rmarkdonwn document can be used to reproduce the panels in figure 5 of the manuscript: *huva: human variation in gene expression as surrogate for gene function*.
+To run this script without any problem of dependencies or conflicts in the installation we suggest to use the docker image we provide (see README file).
+
+# Figure 5 (Supp. Figures S12, S13, S14)
+In this figure we compare the result of the *huva experiment* for STAT1, a key regulator of T cell biology where not much is yet understood about its role in monocytes. We compare the results with the phenotype and transcriptome of STAT1 GOF patients, showing how *huva* can also predict the changes cause by a GOI mutation (HIGH *huva* group)
+
+## Loading required packages
+```{r, message = FALSE, warning = FALSE}
+library(huva)
+library(huva.db)
+library(fgsea)
+library(ggplot2)
+library(tidyr)
+library(ggrepel)
+library(gplots)
+library(ggbeeswarm)
+library(hexbin)
+library(reshape2)
+library(factoextra)
+library(Hmisc)
+library(VennDiagram)
+library(rhdf5)
+library(clusterProfiler)
+library(DOSE)
+library(GSEABase)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(tximport)
+library(DESeq2)
+library(vsn)
+library(pheatmap)
+library(genefilter)
+library(biomaRt)
+library(limma)
+library(IHW)
+library(org.Hs.eg.db)
+```
+
+## Costum Functions
+```{r}
+source("./source/costum_function.R")
+```
+
+## STAT1 *huva experiment*
+At first we calculate the *huva experiment* for *STAT1* to investigate the effect of the modulation of this gene in the immune system
+
+### Run the experiment
+```{r echo=TRUE, results='hide', message=FALSE}
+set.seed(91)
+
+STAT1_binned <- run_huva_experiment(data = huva.db, 
+                                      gene = "STAT1", 
+                                      quantiles = 0.10, 
+                                      gs_list = hallmarks_V7.2,
+                                      summ = T, 
+                                      datasets_list = NULL, 
+                                      adjust.method = "BH")
+```
+
+### Principal component analysis
+```{r, warning=F, message=F, echo=TRUE, results='hide', message=FALSE}
+DE_HuVa_FG500 <- get_DE_huva(huva_exp = STAT1_binned, study = "FG500")
+```
+
+
+```{r, warning=F, message=F}
+DE_HuVa_FG500$PCA_FG500_PBMC + ggtitle("Fig. 5a - PCA 500FG")
+```
+
+### Number of DE genes
+```{r}
+DE_table <- STAT1_binned$FG500$DE_genes$FG500_PBMC
+
+DE_table$reg <- ifelse(DE_table$logFC < -1 & DE_table$adj.P.Val < 0.05, "down", 
+                       ifelse(DE_table$logFC > 1 & DE_table$adj.P.Val < 0.05, "up", "none"))
+
+tmp <- as.data.frame(table(DE_table$reg))
+tmp <- tmp[tmp$Var1 %in% c("up", "down"), ]
+
+ggplot(tmp, aes(x=Var1, y=Freq, fill=Var1)) +
+  geom_bar(stat = "identity", color = "black") + 
+  scale_x_discrete(limits = c("down", "up")) +
+  theme_bw() + theme(aspect.ratio = 2, legend.position = "none") +
+  scale_fill_manual(values = c("#32A9D1", "#C92A2A")) +
+  xlab("") + ylab("# of DE genes") +
+  ggtitle("Fig S12c - DE genes")
+```
+
+### GOEA - hallmark
+```{r}
+gsea_500FG <- get_gsea_huva(huva_exp = STAT1_binned, study = "FG500")
+
+# Define the color
+gsea_500FG$FG500_PBMC$color <- "white"
+
+gsea_500FG$FG500_PBMC$color <- ifelse(gsea_500FG$FG500_PBMC$pathway %in% c("HALLMARK_INTERFERON_ALPHA_RESPONSE", "HALLMARK_INTERFERON_GAMMA_RESPONSE"), "interferon response",
+                                      ifelse(gsea_500FG$FG500_PBMC$pathway == "HALLMARK_INFLAMMATORY_RESPONSE", "immune response",
+                                            ifelse(gsea_500FG$FG500_PBMC$pathway == "HALLMARK_G2M_CHECKPOINT", "proliferation", "white")))
+
+ggplot(gsea_500FG$FG500_PBMC, aes(x=-NES, y=-log10(pval), size = -log10(pval), alpha=-log10(pval), fill = color)) +
+  geom_point(shape=21) + theme_bw() + 
+  theme(aspect.ratio = 1.5) + 
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") + 
+  geom_vline(xintercept = 0, linetype = "dashed") + 
+  scale_x_continuous(limits = c(-3.5, 3.5)) +
+  scale_fill_manual(values = c("#3672d9", "#66b83b", "#d65e90", "#ffffff")) +
+  ggtitle("Fig 5b - GSEA") +
+  xlab("NES")
+```
+
+### GSEA - Selected pathway
+```{r}
+rank_gene_HuVa <- list()
+
+rank_gene_HuVa$FG500 <- STAT1_binned$FG500$Rank_genelist$FG500_PBMC
+```
+
+#### INTERFERON ALPHA RESPONSE
+```{r}
+plotEnrichment(hallmarks_V7.2$HALLMARK_INTERFERON_ALPHA_RESPONSE,
+               -rank_gene_HuVa$FG500) + labs(title="Fig. S12d - HALLMARK_INTERFERON_ALPHA_RESPONSE") + theme(aspect.ratio = 1/2)
+```
+
+#### INTERFERON GAMMA RESPONSE
+```{r}
+plotEnrichment(hallmarks_V7.2$HALLMARK_INTERFERON_GAMMA_RESPONSE,
+               -rank_gene_HuVa$FG500) + labs(title="Fig. S12d - HALLMARK_INTERFERON_GAMMA_RESPONSE") + theme(aspect.ratio = 1/2)
+```
+
+#### G2M CHECKPOINT
+```{r}
+plotEnrichment(hallmarks_V7.2$HALLMARK_G2M_CHECKPOINT,
+               -rank_gene_HuVa$FG500) + labs(title="Fig. S12d - HALLMARK_G2M_CHECKPOINT") + theme(aspect.ratio = 1/2)
+```
+
+#### INFLAMMATORY RESPONSE
+```{r}
+plotEnrichment(hallmarks_V7.2$HALLMARK_INFLAMMATORY_RESPONSE,
+               -rank_gene_HuVa$FG500) + labs(title="Fig. S12d - HALLMARK_INFLAMMATORY_RESPONSE") + theme(aspect.ratio = 1/2)
+```
+
+### Changes in cell counts and cytokines
+```{r}
+meta.plot_FG500 <- get_meta.plot_huva(huva_exp = STAT1_binned, study = "FG500")
+```
+
+#### Monocytes
+```{r}
+meta.plot_FG500$FG500_PBMC_cellcount$`Monocytes (CD14+)` + 
+  scale_y_continuous(limits = c(0, 1250000)) + 
+  theme_bw() +
+  theme(aspect.ratio = 2) +
+  ggtitle("Fig 5c - Monocytes") +
+  ylab("abs. # monocytes")
+```
+
+#### Classical Monocytes
+```{r}
+meta.plot_FG500$FG500_PBMC_cellcount$`Classical monocytes (CD14++CD16-)` + 
+  scale_y_continuous(limits = c(0, 800000)) + 
+  theme_bw() +
+  theme(aspect.ratio = 2) +
+  ggtitle("Fig S12e - Classical Monocytes") +
+  ylab("abs. # class. mono.")
+```
+
+#### Intermediate Monocytes
+```{r}
+meta.plot_FG500$FG500_PBMC_cellcount$`Intermediate monocytes (CD14+CD16+)` + 
+  scale_y_continuous(limits = c(0, 100000)) + 
+  theme_bw() +
+  theme(aspect.ratio = 2) +
+  ggtitle("Fig S12f - Intermediate Monocytes") +
+  ylab("abs. # int. mono.")
+```
+
+#### Non-classical Monocytes
+```{r}
+meta.plot_FG500$FG500_PBMC_cellcount$`Non-classical monocytes (CD14++CD16+)` + 
+  scale_y_continuous(limits = c(0, 300000)) + 
+  theme_bw() +
+  theme(aspect.ratio = 2) +
+  ggtitle("Fig S12g - Non-classical Monocytes") +
+  ylab("abs. # non-class. mono.")
+```
+
+#### IL1b
+```{r}
+meta.plot_FG500$FG500_PBMC_cytokines$IL1b_S.aureus_WB_48h + 
+  scale_y_continuous(limits = c(0, 15)) + 
+  theme_bw() +
+  theme(aspect.ratio = 2) +
+  ggtitle("Fig S12h - IL1b - S.aureus")
+```
+
+## STAT1 GOF
+To validate the results of the *huva experimet* here we investigate the changes in the immune system in patients with a GOF mutation for *STAT1*. We will first perform a differential expression analysis comparing GOF patients with age matched controls to later compare this result with the result of the *huva expreiment* in both whole blood and monocytes samples.
+
+### Load the data
+Loading the data for the analysis (expression and annotation table).
+```{r}
+STAT1_counts <- readRDS("./data/STAT1_counts.rds")
+
+sample_table <- readRDS("./data/sample_table.rds")
+
+identical(colnames(STAT1_counts), rownames(sample_table))
+```
+
+### Parameters
+Setting the parameters for the analysis.
+```{r}
+organism = "human"
+
+dir <- "."
+
+plot_order <- "Group"
+
+plot_annotation <- sample_table[,c("Group"), drop = F]
+```
+
+### Color scheme
+Setting the color scheme for the analysis.
+```{r}
+# Candida.stimulation
+col_Candida.stimulation <- c("#0FBA23")
+names(col_Candida.stimulation) <- c("Unstimulated") 
+# Candida.stimulation.1
+col_Candida.stimulation.1 <- c("#CD1076")
+names(col_Candida.stimulation.1) <- c("4")
+# STAT1.mutation
+col_STAT1.mutation = c("#00FFFF", "#FFB90F", "#EEAD0E","#CD950C")
+names(col_STAT1.mutation) <- c("none", "p.R274W", "p.R274Q",    "p.D23V")
+# CMC.patient
+col_CMC.patient <- c("#CDC0B0", "#8B8378")
+names(col_CMC.patient) <- c("Control", "CMC Patient")
+# Group
+col_Group <- c("#A0DB8E","#FF4500")
+names(col_Group) <- c("ctrl_4h_unstim","pat_4h_unstim")
+#Candida.stimulation.2
+col_Candida.stimulation.2 <- c(brewer.pal(4, "Greens"))
+names(col_Candida.stimulation.2) <- c("Yes (4 Hours)", "No (4 Hours)","Yes (24 Hours)","No (24 Hours)")
+#Experiment.date
+col_Date <- c(brewer.pal(3, "Reds"))
+names(col_Date) <- c("Feb_12","Jul_12","Dec_13")
+#Sex
+col_Sex<- c("#596E78","#CC99A2")
+names(col_Sex) <- c("F","M")
+
+# combine color code into list
+ann_colors <- list(Group = col_Group,
+                   Candida.stimulation = col_Candida.stimulation,
+                   Candida.stimulation.1 = col_Candida.stimulation.1,
+                   STAT1.mutation = col_STAT1.mutation,
+                   CMC.patient = col_CMC.patient)
+```
+
+### Preparation of the dds
+```{r}
+dds_txi <- DESeqDataSetFromMatrix(countData = STAT1_counts,
+                                  colData = sample_table,
+                                  design = ~ Group,
+                                  ignoreRank=FALSE)
+```
+
+#### Filter low count genes
+We remove all gene with low expression, in this case we remove all the genes with a total expression of 100 considering the depth of sequencing of the data.
+```{r pre-filtering}
+genes_to_keep <- rowSums(counts(dds_txi)) >= 100
+dds <- dds_txi[genes_to_keep,]
+```
+
+### DEseq2
+```{r}
+dds <- DESeq(dds)
+```
+
+### Normalized count table
+Export a normalized count table of the data with some extra information on the genes
+```{r}
+tx_annotation <- read.delim(file.path("./reference_files/ID2SYMBOL_gencode_v27_transcript.txt"), 
+                         header = F , 
+                         stringsAsFactors = F,
+                         col.names = c("GENEID", "TXNAME", "SYMBOL", "GENETYPE"))
+
+norm_anno <- as.data.frame(counts(dds, normalized=T))
+norm_anno$GENEID <- row.names(norm_anno)
+
+# add gene annotation extracted from the gtf file
+tx_annotation<-separate(tx_annotation, col=GENEID, into=c("GENEID","Y"), sep="[.]")
+tx_annotation$Y<-NULL
+gene_annotation <- tx_annotation[!duplicated(tx_annotation$GENEID),c("GENEID", "SYMBOL", "GENETYPE")]
+gene_annotation <- gene_annotation[match(rownames(norm_anno), gene_annotation$GENEID),]
+
+# add additional gene annotation downloaded from biomart
+biomart <- read.delim(file.path("./reference_files/biomart_190110.txt"), stringsAsFactors = FALSE)
+idx <- match(unlist(lapply(strsplit(gene_annotation$GENEID, split = "[.]"), `[[`, 1)), biomart$Gene.stable.ID)
+gene_annotation$DESCRIPTION <- biomart$Gene.description[idx]
+gene_annotation$CHR <- biomart$Chromosome.scaffold.name[idx]
+
+# merge expression table and annotation
+norm_anno <- merge(norm_anno,
+                   gene_annotation,
+                   by = "GENEID")
+
+rownames(norm_anno) <- norm_anno$GENEID
+```
+
+### rlog transformation
+For data visualization the normalized counts are rlog tranformed
+```{r}
+dds_vst <- rlog(dds, blind = TRUE)
+```
+
+### Batch correction
+There is a clear batch in the data coming from the experimental data, this information is used to correct the data with the limma funtion and the DESeq2 model.
+```{r}
+batch_dds_vst <- limmaBatchEffectRemoval(input=dds_vst,
+                                         modelfactor = "Group",
+                                         batchfactor = "Date",
+                                         batchfactor_2 = NULL)
+```
+
+### PCA
+```{r, warning=F}
+plotPCA(pca_input = batch_dds_vst,
+         ntop="all", 
+         xPC=1,
+         yPC=2,
+         color="Group",
+         anno_colour = col_Group,
+         point_size=10, label = NA,
+         title="PCA of batch-corrected counts") + 
+         theme_bw() + theme(aspect.ratio = 1) + 
+         ggtitle("Fig. S13b - Batch corrected PCA")
+```
+
+### Add the batch in the model
+```{r}
+ddssva <- dds
+design(ddssva) <- ~ Date + Group
+
+dds <- DESeq(ddssva)
+```
+
+### Batch corrected table for visualization
+```{r}
+batch_vst_anno <- batch_dds_vst
+batch_vst_anno$GENEID <- row.names(batch_vst_anno)
+
+# add gene annotation extracted from the gtf file
+gene_annotation <- tx_annotation[!duplicated(tx_annotation$GENEID),c("GENEID", "SYMBOL", "GENETYPE")]
+gene_annotation <- gene_annotation[gene_annotation$GENEID %in% rownames(batch_vst_anno) ,]
+
+# add additional gene annotation downloaded from biomart
+biomart <- read.delim(file.path("./reference_files/biomart_190110.txt"), stringsAsFactors = FALSE)
+idx <- match(unlist(lapply(strsplit(gene_annotation$GENEID, split = "[.]"), `[[`, 1)), biomart$Gene.stable.ID)
+gene_annotation$DESCRIPTION <- biomart$Gene.description[idx]
+gene_annotation$CHR <- biomart$Chromosome.scaffold.name[idx]
+
+# merge expression table and annotation
+batch_vst_anno <- merge(batch_vst_anno,
+                   gene_annotation,
+                   by = "GENEID")
+rownames(batch_vst_anno) <- batch_vst_anno$GENEID
+```
+
+### Calculated differential expression
+```{r}
+comparison_table<-data.frame(comparison = c("pat_4h_unstim"),
+                             control = c("ctrl_4h_unstim"))
+
+DEresults <- DEAnalysis(condition = "Group",
+                        alpha=0.05 ,
+                        lfcThreshold= 0,
+                        sigFC = 2,
+                        multiple_testing="IHW",
+                        shrinkage = TRUE,
+                        shrinkType="normal")
+```
+
+#### Summary
+```{r}
+DEcounts <- NULL
+
+for(i in 1:nrow(comparison_table)){
+  tmp <- unlist(DEresults[[1+i]]@Number_DE_genes)
+  DEcounts <- rbind(DEcounts, tmp)
+}
+
+rownames(DEcounts) <- names(DEresults)[-1]
+
+DEcounts
+```
+
+### STAT1 expression
+```{r}
+plotSingleGene(data=batch_vst_anno, 
+                 symbol="STAT1", 
+                 condition="Group",
+                 anno_fill=col_Group,
+                 shape= NULL) + 
+                 theme(aspect.ratio=2) + 
+                 ggtitle("Fig. S13c - STAT1 expression") + 
+                 ylab("batch corrected rlog counts") + xlab("")
+```
+
+### HM of DE genes
+```{r}
+plotDEHeatmap("pat_4h_unstim_vs_ctrl_4h_unstim", data_input = batch_vst_anno,
+              factor="Genotype_Age",
+              conditions="all", cluster_cols = T)
+```
+
+### Volcano plot
+```{r, message=F, warning=F}
+plotVolcano(comparison= "pat_4h_unstim_vs_ctrl_4h_unstim",
+            labelnum=10) + scale_x_continuous(limits = c(-4,+4)) + theme(aspect.ratio = 1) + 
+            ggtitle("Fig. S13e - Volcano plot")
+```
+
+### GOEA
+```{r echo=TRUE, results='hide', message=FALSE}
+# define universe
+universe <- as.character(norm_anno$SYMBOL)
+# change symbols to ENTREZ IDs (necessary for ClusterProfiler)
+universe_Entrez <- bitr(universe, 
+                        fromType="SYMBOL", 
+                        toType="ENTREZID", 
+                        OrgDb="org.Hs.eg.db")$ENTREZID
+```
+
+
+```{r echo=TRUE, results='hide', message=FALSE}
+GSEA_ctrl_unstim <-  GSEA(comparison="pat_4h_unstim_vs_ctrl_4h_unstim",
+                                 organism="human",
+                                 GeneSets = c("GO"),
+                                 GOntology = "BP",
+                                 pCorrection = "none",
+                                 pvalueCutoff = 1,
+                                 qvalueCutoff = 1)
+```
+
+#### Plot
+```{r}
+dotplotGSEA(GSEA_ctrl_unstim$GOup, show = 20) + ggtitle("Fig. S13f - GO enrichment upregulated genes")
+```
+
+### Comparison of single genes
+We compare the expression of selected STAT1 targets between the result of the *huva expreiment* end the the differential expression analysis of control and STAT1 GOF samples.
+```{r}
+genes <- c("TAP2","IRF1","IFIT3")
+
+for (i in genes) {
+ plot <- plotSingleGene(data=batch_vst_anno, 
+                 symbol=i, 
+                 condition="Group",
+                 anno_fill=col_Group,
+                 shape= NULL) + theme(aspect.ratio = 2) + 
+                 ggtitle("Fig S14a - Comparison of selected genes") +
+                 ylab("rlog counts") + xlab("")
+ print(plot)
+ 
+ plot_binned <- plot_binned_gene(goi = i, huva_experiment = STAT1_binned)
+
+ print(plot_binned$FG500_PBMC + theme_bw() + theme(aspect.ratio = 2) + ggtitle("Fig S14a - Comparison of selected genes"))
+}
+```
+
+### Comparison of gene signatures
+```{r}
+DE_genes_list <- list()
+
+DE_genes_list$up_4h_ctrl <- DEresults$pat_4h_unstim_vs_ctrl_4h_unstim@DE_genes$up_regulated_Genes$SYMBOL
+DE_genes_list$dw_4h_ctrl <- DEresults$pat_4h_unstim_vs_ctrl_4h_unstim@DE_genes$down_regulated_Genes$SYMBOL
+
+rank_gene_HuVa <- list()
+
+rank_gene_HuVa$FG500 <- STAT1_binned$FG500$Rank_genelist$FG500_PBMC 
+rank_gene_HuVa$ImmVarM <- STAT1_binned$ImmVar$Rank_genelist$ImmVar_CD14M
+
+set.seed(91)
+
+gsea_FG500 <- fgsea(pathways = DE_genes_list, 
+                  stats = -rank_gene_HuVa$FG500,
+                  minSize=1,
+                  maxSize=Inf,
+                  nperm=10000)
+
+set.seed(91)
+
+gsea_ImmVarM <- fgsea(pathways = DE_genes_list, 
+                  stats = -rank_gene_HuVa$ImmVarM,
+                  minSize=1,
+                  maxSize=Inf,
+                  nperm=10000)
+```
+
+#### 500FG
+```{r}
+ggplot(gsea_FG500[c(1,2),], aes(x=NES, y=-log10(padj), fill=pathway)) + 
+  theme_bw() +
+  geom_point(size=10, shape =21) + 
+  theme(aspect.ratio = 2) + 
+  scale_x_continuous(limits = c(-3,3)) + 
+  scale_y_continuous(limits = c(0,5)) +
+  geom_hline(yintercept = -log10(0.05), linetype="dashed") +
+  geom_vline(xintercept = 0, linetype="dashed") +
+  ggtitle("Fig 5e - GSEA DESeq2 DE genes on 500FG huva ranking") +
+  scale_fill_manual(values = c("#F39B7F", "#01A087"))
+```
+
+
+```{r}
+plotEnrichment(DE_genes_list$up_4h_ctrl, -rank_gene_HuVa$FG500) + 
+  labs(title="Fig 5f - 500FG - Upregulated genes in STAT1 GOF") + 
+  theme(aspect.ratio = 1/2)
+```
+
+
+```{r}
+plotEnrichment(DE_genes_list$dw_4h_ctrl, -rank_gene_HuVa$FG500) + 
+  labs(title="Fig 5f - 500FG - Downregulared genes in STAT1 GOF") + 
+  theme(aspect.ratio = 1/2)
+```
+
+#### ImmVar Monocytes
+```{r}
+ggplot(gsea_ImmVarM[c(1,2),], aes(x=NES, y=-log10(padj), fill=pathway)) + 
+  theme_bw() +
+  geom_point(size=10, shape = 21) + 
+  theme(aspect.ratio = 2) + 
+  scale_x_continuous(limits = c(-3,3)) + 
+  scale_y_continuous(limits = c(0,5)) +
+  geom_hline(yintercept = -log10(0.05), linetype="dashed") +
+  geom_vline(xintercept = 0, linetype="dashed") +
+  ggtitle("Fig S14b - GSEA DESeq2 DE genes on ImmVar HuVa ranking") +
+  scale_fill_manual(values = c("#F39B7F", "#01A087"))
+```
+
+
+```{r}
+plotEnrichment(DE_genes_list$up_4h_ctrl,
+               -rank_gene_HuVa$ImmVarM) + labs(title="FigS14c - ImmVar - Upregulated genes in STAT1 GOF") + theme(aspect.ratio = 1/2)
+```
+
+```{r}
+plotEnrichment(DE_genes_list$dw_4h_ctrl,
+               -rank_gene_HuVa$ImmVarM) + labs(title="FigS14c - ImmVar - Downregulared genes in STAT1 GOF") + theme(aspect.ratio = 1/2)
+```
+
+# Clean the environment
+```{r}
+source("./source/clean.R")
+```
+
+# Session info
+```{r}
+info <- sessionInfo()
+info
+```
+
+# Save environment
+```{r}
+# save.image(paste("./data/",Sys.Date(), "_huva_Figure_5.RData", sep = ""))
+```

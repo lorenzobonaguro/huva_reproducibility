@@ -1,3 +1,11 @@
 *.tar.gz
 *_huva_Figure_1.RData
 *_huva_Figure_2.RData
+*_huva_Figure_3.RData
+*_huva_Figure_4.RData
+*_huva_Figure_5.RData
+*.html
+
+# Ignore some result forlders not necessary for the clculation
+Cell_count_0.971_3000
+Cytokines_0.674_3000
