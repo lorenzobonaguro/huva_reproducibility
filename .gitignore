@@ -4,8 +4,9 @@
 *_huva_Figure_3.RData
 *_huva_Figure_4.RData
 *_huva_Figure_5.RData
-*.html
 
-# Ignore some result forlders not necessary for the clculation
+# Ignore some result forlders not necessary for the calculation
 Cell_count_0.971_3000
 Cytokines_0.674_3000
+.dockerignore
+dockerstart.sh

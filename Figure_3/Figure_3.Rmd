@@ -50,18 +50,21 @@ set.seed(91)
 ## Parallel computing
 Part of the simulation executed here is calculated in parallel to lower the computational time, this is not necessary, the user can decide to activate or not this feature, changing the parameter 'par_cal' to TRUE
 ```{r, message = FALSE, warning = FALSE}
-if (require(doMC) == F) {
+par_cal <- FALSE
+
+if (par_cal == TRUE) {
+ 
+  if (require(doMC) == F) {
   BiocManager::install("doMC", version = "3.12", update = F)
+  }
+
+  library(doMC)
+  
+  # Devine the number of workers for the parallel computing
+  workers <- 4
+   
 }
-
-library(doMC)
-
-par_cal <- FALSE 
-
-# Devine the number of workers for the parallel computing
-workers <- 4
 ```
-
 
 ## Relevance of sample selection
 We here wannt to compare the result of an huva experiment, where the comparison if between two groups characterized by low or high expression of a gene of interest, and a random selection of samples in the two experimental groups. We defined the *run_huva_experiment_random_sample* function which does not select the samples based on the expression of the gene of interest but only randomize the two experimental groups of equal size to the original *huva* groups. Here for example a randomized huva experiment was perfomed of CRELD1 giving almost no difference in the expression of the GOI (boxplot).
@@ -281,6 +284,7 @@ pheatmap(huva_default_bias$FG500$data$PBMC[1:100,],
          breaks = seq(-5,5, length.out = 100),
          cellwidth = 4, cellheight = 3)
 ```
+
 #### Boxplot visualization of the bias
 ```{r}
 df_orignal <- melt(huva.db$FG500$data$PBMC)
@@ -301,7 +305,15 @@ ggplot(bias_vis_df[bias_vis_df$Var2 %in% sample(levels(bias_vis_df$Var2), size =
   theme_bw() +
   ggtitle("Figure S6c - random selection of 5 samples to show the bias") + theme(aspect.ratio = 2/5)
 
-rm(df_bias, df_orignal, bias_vis_df)
+values <- seq(1, 1.1, length.out = 95)
+names(values) <- colnames(huva_default_bias$FG500$data$PBMC)
+
+print(paste("The bias on the samples",
+            paste(c("HV078", "HV126", "HV259", "HV185", "HV435", "is:"), collapse = ", "),
+            paste(values[c("HV078", "HV126", "HV259", "HV185", "HV435")], collapse = ", "), 
+            sep = " "))
+
+rm(df_bias, df_orignal, bias_vis_df, values)
 ```
 
 ### Getting the DE genes overlap
@@ -362,7 +374,8 @@ pheatmap(tmp,
          show_colnames = F, 
          cellwidth = 0.15, 
          cellheight = 0.15, 
-         border_color = NA, na_col = NA, 
+         border_color = NA, na_col = NA,
+         breaks = seq(0, 1, length.out = 50),
          main = "Figure 3f - Original dataset")
 
 rm(tmp)
@@ -384,7 +397,8 @@ pheatmap(tmp,
          show_colnames = F, 
          cellwidth = 0.15, 
          cellheight = 0.15, 
-         border_color = NA, na_col = NA, 
+         border_color = NA, na_col = NA,
+         breaks = seq(0, 1, length.out = 50),
          main = "Figure 3f - Bias dataset")
 
 rm(tmp)
@@ -454,12 +468,12 @@ pheatmap(tmp,
          scale = "none", 
          cluster_rows = F, 
          cluster_cols = F, 
-         color = inferno(direction = -1, 10), 
+         color = inferno(direction = -1, 50), 
          show_rownames = F, 
          show_colnames = F, 
          cellwidth = 0.15, 
          cellheight = 0.15, 
-         breaks = seq(0, 1, length.out = 10), 
+         breaks = seq(0, 1, length.out = 50), 
          border_color = NA, na_col = NA, 
          main = "Figure S8c - Original dataset")
 
@@ -477,12 +491,12 @@ pheatmap(tmp,
          scale = "none", 
          cluster_rows = F, 
          cluster_cols = F, 
-         color = inferno(direction = -1, 10), 
+         color = inferno(direction = -1, 50), 
          show_rownames = F, 
          show_colnames = F, 
          cellwidth = 0.15, 
          cellheight = 0.15, 
-         breaks = seq(0, 1, length.out = 10), 
+         breaks = seq(0, 1, length.out = 50), 
          border_color = NA, na_col = NA, 
          main = "Figure S8d - Bias dataset")
 
@@ -557,6 +571,7 @@ pheatmap(tmp,
          cellwidth = 0.15, 
          cellheight = 0.15, 
          border_color = NA, na_col = NA, 
+         breaks = seq(0, 1, length.out = 50),  
          main = "Figure S7c - Original dataset")
 
 rm(tmp)
@@ -579,6 +594,7 @@ pheatmap(tmp,
          cellwidth = 0.15, 
          cellheight = 0.15, 
          na_col = NA, border_color = NA, 
+         breaks = seq(0, 1, length.out = 50),  
          main = "Figure S7c - Original dataset")
 
 rm(tmp)
@@ -622,6 +638,7 @@ pheatmap(tmp,
          cellwidth = 0.15, 
          cellheight = 0.15, 
          border_color = NA, na_col = NA, 
+         breaks = seq(0, 1, length.out = 50),  
          main = "Figure S7e - Original dataset HIGH group")
 
 rm(tmp)
@@ -644,6 +661,7 @@ pheatmap(tmp,
          cellwidth = 0.15, 
          cellheight = 0.15, 
          border_color = NA, na_col = NA, 
+         breaks = seq(0, 1, length.out = 50),  
          main = "Figure S7e - Bias dataset HIGH group")
 
 rm(tmp)
@@ -712,6 +730,7 @@ ggplot(binned_dataset$FG500$gsea$FG500_PBMC, aes(x=NES, y=-log10(pval), size=-lo
 
 rm(binned_dataset)
 ```
+
 ### AKT
 ```{r}
 set.seed(91) 

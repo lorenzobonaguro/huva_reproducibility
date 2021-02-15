@@ -89,7 +89,7 @@ We now want to investigate the distribution of MyD88 expression in the cohort
 ```{r}
 expression <- MYD88$overview$expression$FG500_PBMC
 
-expression$group <- ifelse(expression$expression < quantile(expression$expression, 0.1), "low", ifelse(expression$expression > quantile(expression$expression, 0.9), "high", "none"))
+expression$group <- ifelse(expression$expression <= quantile(expression$expression, 0.1), "low", ifelse(expression$expression >= quantile(expression$expression, 0.9), "high", "none"))
 
 ggplot(expression, aes(x=expression)) +
   geom_histogram(color="black", bins = 20, fill= "white") + 
@@ -254,13 +254,13 @@ meta_plot$FG500_PBMC_cytokines$IL6_LPS_macroPG_24h + theme_bw() +
   theme(aspect.ratio = 2) + ggtitle("Fig. 2g - IL6 - LPS - boxplot")
 ```
 
-#### Int. monocytes - Boxplot
+#### IL6 - CpG - Boxplot
 ```{r}
 meta_plot$FG500_PBMC_cytokines$IL6_CpG_PBMC_24h + theme_bw() + 
   theme(aspect.ratio = 2) + ggtitle("Fig. 2i - IL6 - CpG - boxplot")
 ```
 
-#### Int. monocytes - Boxplot
+#### IL6 - Pam3Cys - Boxplot
 ```{r}
 meta_plot$FG500_PBMC_cytokines$IL6_Pam3Cys_PBMC_24h + theme_bw() + 
   theme(aspect.ratio = 2) + ggtitle("Fig. 2j - IL6 - Pam3Cys - boxplot")
@@ -282,6 +282,7 @@ ggplot(gsea, aes(x=NES, y=-log10(pval), label = pathway)) +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed") + 
   geom_text_repel(size = 2) + ggtitle("Fig. S3k - GSEA of selected signatures")
 ```
+
 #### GNF2 MYD88 Enrichment
 ```{r}
 plotEnrichment(msigdb_V7.2$GNF2_MYD88,
@@ -507,5 +508,5 @@ info
 
 # Save environment
 ```{r}
-# save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_2.RData", sep = ""))
 ```

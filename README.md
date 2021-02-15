@@ -28,10 +28,16 @@ cd huva_reproducibility
 ### Build the Docker image and start the container
 ```sh
 # Build the Docker image
-docker build -t reproduce .
+docker build -t rep:v01 . # Skip this step if you want to use the Docker image from DockerHub
+```
 
+```
+docker pull lorenzobonaguro/rep:v01
+```
+
+```sh
 # Run a container
-docker run -dp 8787:8787 -e USER=mariorossi -e PASSWORD=mariorossi --name rep_huva -v 'your_directory':/home/mariorossi/data/ reproduce
+docker run -dp 8787:8787 -e USER=mariorossi -e PASSWORD=mariorossi --name rep_huva -v 'your_directory':/home/mariorossi/data/ rep:v01
 ```
 ### Open the RStudio session
 Enter in your browser `localhost:8787`, this should start a Rstudio session you can use to explore the code and reproduce the analysis.

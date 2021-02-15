@@ -577,5 +577,5 @@ info
 
 # Save environment
 ```{r}
-# save.image(paste("./data/",Sys.Date(), "_huva_Figure_5.RData", sep = ""))
+save.image(paste("./data/",Sys.Date(), "_huva_Figure_5.RData", sep = ""))
 ```

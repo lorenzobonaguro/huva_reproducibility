@@ -25,6 +25,9 @@ RUN Rscript -e 'install.packages("/tmp/org.Hs.eg.db_3.8.2.tar.gz", repos = NULL,
 
 # Install huva
 COPY huva_0.1.4.tar.gz /tmp/huva_0.1.4.tar.gz
-COPY huva.db_0.1.4.tar.gz /tmp/huva.db_0.1.4.tar.gz
-RUN Rscript -e 'install.packages("/tmp/huva.db_0.1.4.tar.gz", repos = NULL, type = "source")' && \
+COPY huva.db_0.1.4-2.tar.gz /tmp/huva.db_0.1.4-2.tar.gz
+RUN Rscript -e 'install.packages("/tmp/huva.db_0.1.4-2.tar.gz", repos = NULL, type = "source")' && \
 	Rscript -e 'install.packages("/tmp/huva_0.1.4.tar.gz", repos = NULL, type = "source")'
+
+# Remove the content of the tmp folder
+RUN cd /tmp && rm fgsea_1.12.0.tar.gz && rm org.Hs.eg.db_3.8.2.tar.gz && rm clusterProfiler_3.12.0.tar.gz && rm huva_0.1.4.tar.gz && rm huva.db_0.1.4-2.tar.gz
