@@ -225,7 +225,7 @@ if (new_bench == TRUE) {
 ```
 
 ### Plotting
-#### Fig S2A
+#### *huva exploratory experiment*
 ```{r}
 if (new_bench == TRUE) {
  
@@ -235,31 +235,31 @@ if (new_bench == TRUE) {
 }
 ```
 
-#### Fig S2B
+#### *huva gene experiment* - Fig S2A
 ```{r}
 if (new_bench == TRUE) {
  
-  plot(vector = bench$gene, title = "Fig. S2B - huva gene experiment", fill = "#E64B35", bins = 30)
+  plot(vector = bench$gene, title = "Fig. S2A - huva gene experiment", fill = "#E64B35", bins = 30)
   dev.off()
    
 }
 ```
 
-#### Fig S2C
+#### *huva phenotype experiment* - Fig S2B
 ```{r}
 if (new_bench == TRUE) {
  
-  plot(vector = bench$phenotype, title = "Fig. S2C - huva phenotype experiment", fill = "#01A087", bins = 30)
+  plot(vector = bench$phenotype, title = "Fig. S2B - huva phenotype experiment", fill = "#01A087", bins = 30)
   dev.off()
    
 }
 ```
 
-#### Fig S2D
+#### *huva signature experiment* - Fig S2C
 ```{r}
 if (new_bench == TRUE) {
  
-  plot(vector = bench$signature, title = "Fig. S2D - huva signature experiment", fill = "#F39B7F", bins = 30)
+  plot(vector = bench$signature, title = "Fig. S2C - huva signature experiment", fill = "#F39B7F", bins = 30)
   dev.off()
    
 }
@@ -273,33 +273,37 @@ bench_orig <- readRDS("data/original_results.rds")
 
 ### Plotting
 
-#### Fig S2A
+#### *huva exploratory experiment* 
 ```{r}
-plot(vector = bench_orig$explor, title = "Fig. S2A - huva exploratory experiment", fill = "#4DBBD5", bins = 30)
+plot(vector = bench_orig$explor, title = "Data not shown - huva exploratory experiment", fill = "#4DBBD5", bins = 30)
 dev.off()
 ```
 
-#### Fig S2B
+#### *huva gene experiment* - Fig S2A
 ```{r}
-plot(vector = bench_orig$gene, title = "Fig. S2B - huva gene experiment", fill = "#E64B35", bins = 30)
+plot(vector = bench_orig$gene, title = "Fig. S2A - huva gene experiment", fill = "#E64B35", bins = 30)
 dev.off()
 ```
 
-#### Fig S2C
+#### *huva phenotype experiment* - Fig S2B
 ```{r}
-plot(vector = bench_orig$phenotype, title = "Fig. S2C - huva phenotype experiment", fill = "#01A087", bins = 30)
+plot(vector = bench_orig$phenotype, title = "Fig. S2B - huva phenotype experiment", fill = "#01A087", bins = 30)
 dev.off()
 ```
 
-#### Fig S2D
+#### *huva signature experiment* - Fig S2C
 ```{r}
-plot(vector = bench_orig$signature, title = "Fig. S2D - huva signature experiment", fill = "#F39B7F", bins = 30)
+plot(vector = bench_orig$signature, title = "Fig. S2C - huva signature experiment", fill = "#F39B7F", bins = 30)
 dev.off()
 ```
 
 ## Clean the env
 ```{r}
-rm(progressBar, cell_count, cytokines, genes, i, iGeneSet, nGeneSets, time, signature)
+if (new_bench == TRUE) {
+ 
+  rm(progressBar, cell_count, cytokines, genes, i, iGeneSet, nGeneSets, time, signature)
+   
+}
 ```
 
 # Session info
