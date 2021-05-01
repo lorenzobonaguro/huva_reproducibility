@@ -30,7 +30,6 @@ library(tidyr)
 library(ggrepel)
 library(gplots)
 library(ggbeeswarm)
-library(hexbin)
 library(reshape2)
 library(factoextra)
 library(Hmisc)
@@ -50,6 +49,8 @@ library(biomaRt)
 library(limma)
 library(IHW)
 library(org.Hs.eg.db)
+library(ggsci)
+library(ggpubr)
 ```
 
 ## Costum Functions
@@ -549,19 +550,128 @@ ggplot(gsea_ImmVarM[c(1,2),], aes(x=NES, y=-log10(padj), fill=pathway)) +
   scale_y_continuous(limits = c(0,5)) +
   geom_hline(yintercept = -log10(0.05), linetype="dashed") +
   geom_vline(xintercept = 0, linetype="dashed") +
-  ggtitle("Fig S14b - GSEA DESeq2 DE genes on ImmVar HuVa ranking") +
+  ggtitle("Fig 5h - GSEA DESeq2 DE genes on ImmVar HuVa ranking") +
   scale_fill_manual(values = c("#F39B7F", "#01A087"))
 ```
 
 
 ```{r}
 plotEnrichment(DE_genes_list$up_4h_ctrl,
-               -rank_gene_HuVa$ImmVarM) + labs(title="FigS14c - ImmVar - Upregulated genes in STAT1 GOF") + theme(aspect.ratio = 1/2)
+               -rank_gene_HuVa$ImmVarM) + labs(title="Fig 5i - ImmVar - Upregulated genes in STAT1 GOF") + theme(aspect.ratio = 1/2)
 ```
 
 ```{r}
 plotEnrichment(DE_genes_list$dw_4h_ctrl,
-               -rank_gene_HuVa$ImmVarM) + labs(title="FigS14c - ImmVar - Downregulared genes in STAT1 GOF") + theme(aspect.ratio = 1/2)
+               -rank_gene_HuVa$ImmVarM) + labs(title="Fig 5i - ImmVar - Downregulared genes in STAT1 GOF") + theme(aspect.ratio = 1/2)
+```
+
+## STAT1 GOF - Sorted populations
+
+### Load data
+```{r}
+norm_anno_sorted <- readRDS("./data/STAT1_sort_norm_count.rds")
+sample_table_sorted <- readRDS("./data/STAT1_sort_sample_table.rds")
+```
+
+### Calculate the fold changes
+```{r}
+# First I change the name of the columns to make it easier to read
+
+if (identical(colnames(norm_anno_sorted)[2:7], as.character(sample_table_sorted$ID))) {
+  
+  colnames(norm_anno_sorted)[2:7] <- sample_table_sorted$Merged
+
+# Adding the columns with the FC
+norm_anno_sorted$log2_FC_Tconv <- log2(norm_anno_sorted$D2_Tconv_mutant_unstim / norm_anno_sorted$D1_Tconv_wt_unstim)
+norm_anno_sorted$log2_FC_CTL <- log2(norm_anno_sorted$D2_CTLs_mutant_unstim / norm_anno_sorted$D1_CTLs_wt_unstim)
+norm_anno_sorted$log2_FC_Mono <- log2(norm_anno_sorted$D2_Mono_mutant_unstim / norm_anno_sorted$D1_Mono_wt_unstim)
+  
+} else {
+  print("something wrong with the table")
+}
+```
+
+### Cleaning the data
+```{r}
+# separate the df for the visualization
+FC_df <- norm_anno_sorted[ , c(1, 8, 12:14)]
+
+# Removing the inf and NaN values and setting them to 0 - Those are coming when 1 or both genes in the comparison are equal to 0
+FC_df$log2_FC_Tconv[is.infinite(FC_df$log2_FC_Tconv)] <- 0
+FC_df$log2_FC_CTL[is.infinite(FC_df$log2_FC_CTL)] <- 0
+FC_df$log2_FC_Mono[is.infinite(FC_df$log2_FC_Mono)] <- 0
+
+FC_df$log2_FC_Tconv[is.na(FC_df$log2_FC_Tconv)] <- 0
+FC_df$log2_FC_CTL[is.na(FC_df$log2_FC_CTL)] <- 0
+FC_df$log2_FC_Mono[is.na(FC_df$log2_FC_Mono)] <- 0
+
+rm(norm_anno_sorted, sample_table_sorted)
+```
+
+### Preparing the data for visualization
+```{r}
+fc_cutoff <- 2
+
+# Defining the datasets for plotting
+order_Tconv <- FC_df[order(abs(FC_df$log2_FC_Tconv), decreasing = T), ] # order the data
+order_Tconv$order <- seq(1:dim(order_Tconv)[1]) # Setting the order for plotting
+order_Tconv$cell_type <- "T Conv" # Giving a name to the group
+order_Tconv <- order_Tconv[, c(3, 6, 7)] # Filtering only the interesting colums
+colnames(order_Tconv)[1] <- "FC" # harmonize the colnams
+
+order_CTL <- FC_df[order(abs(FC_df$log2_FC_CTL), decreasing = T), ]
+order_CTL$order <- seq(1:dim(order_CTL)[1])
+order_CTL$cell_type <- "CTL"
+order_CTL <- order_CTL[, c(4, 6, 7)]
+colnames(order_CTL)[1] <- "FC"
+
+order_Mono <- FC_df[order(abs(FC_df$log2_FC_Mono), decreasing = T), ]
+order_Mono$order <- seq(1:dim(order_Mono)[1])
+order_Mono$cell_type <- "Monocytes"
+order_Mono <- order_Mono[, c(5, 6, 7)]
+colnames(order_Mono)[1] <- "FC"
+
+df <- rbind(order_Mono, order_Tconv, order_CTL)
+
+rm(order_Mono, order_Tconv, order_CTL)
+
+df$cell_type <- factor(df$cell_type, levels = c("Monocytes", "T Conv", "CTL"))
+
+df_filter <- df[abs(df$FC) > fc_cutoff, ]
+
+df_filter <- as.data.frame(table(df_filter$cell_type))
+```
+
+### Plot
+```{r}
+# Single plots
+p1 <- ggplot(df, aes(x = order, y = abs(FC), color = cell_type, fill = cell_type)) +
+             geom_col(position = position_identity()) +
+             theme_bw() +
+             ylab("log2 Fold Change (STAT1 AM vs Ctrl)") +
+             xlab("Gene Rank (of each cell type)") +
+             labs(fill = "Cell Type", color = "Cell Type") +
+             scale_color_locuszoom() +
+             scale_fill_locuszoom() +
+             theme(aspect.ratio = 1, panel.grid = element_blank()) +
+             geom_hline(yintercept = fc_cutoff, linetype = "dashed", color = "black", size = 0.5)
+
+p2 <- ggplot(df_filter, aes(x = Var1, y = Freq, fill = Var1)) +
+             geom_bar(stat = "identity", color = "black") +
+             scale_fill_locuszoom() +
+             theme_bw() +
+             theme(aspect.ratio = 1, panel.grid = element_blank()) +
+             ylab("Nr. of genes (abs FC > 2)") +
+             xlab("") +
+             labs(fill = "Cell Type")
+
+plot_arrange <- ggarrange(p1, p2, ncol = 2, vjust = 1, common.legend = TRUE, legend = "right")
+
+annotate_figure(plot_arrange,
+                fig.lab = "Fig 5g", 
+                fig.lab.face = "bold")
+
+rm(p1, p2, df_filter, df, plot_arrange)
 ```
 
 # Clean the environment

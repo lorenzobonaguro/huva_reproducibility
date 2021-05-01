@@ -22,8 +22,8 @@ for (i in names(clust_prof)) {
 
 GO <-  do.call("rbind", collector)
 
-steelblue <- c("protein localization to membrane", "post−translational protein modification", "carboxylic acid biosynthetic process")
-darkgreen <- c("neutrophil activation", "immune response−activating signal transduction", "blood coagulation")
+steelblue <- c("protein localization to membrane", "post-translational protein modification", "carboxylic acid biosynthetic process")
+darkgreen <- c("neutrophil activation", "immune response-activating signal transduction", "blood coagulation")
 darkgrey <- c("antigen processing and presentation of peptide antigen", "regulation of cell cycle G2/M phase transition", "T cell receptor signaling pathway")
 darkorange <- c("sensory system development", "DNA geometric change", "V(D)J recombination")
 orchid <- c("lymphocyte differentiation", "T cell differentiation", "B cell proliferation")

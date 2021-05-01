@@ -12,11 +12,11 @@ RUN Rscript -e 'BiocManager::install(update = T, ask = F)' && \
 	Rscript -e 'BiocManager::install(c("ggplot2", "Rmisc", "ggpubr", "reshape2", "ggsci", "plotly", "knitr", "pheatmap", "useful", "rmarkdown"), version = "3.12")' && \
 	Rscript -e 'BiocManager::install(c("limma", "GSVA"), version = "3.12")'
 
-COPY fgsea_1.12.0.tar.gz /tmp/fgsea_1.12.0.tar.gz
-RUN Rscript -e 'install.packages("/tmp/fgsea_1.12.0.tar.gz", repos = NULL, type = "source")'
-
 # Install R packages (required for other analyses)  
 RUN Rscript -e 'BiocManager::install(c("tictoc", "tidyverse", "viridis", "combinat", "ComplexHeatmap", "pcaGoPromoter.Hs.hg19", "ggnetwork", "intergraph", "MCDA", "reactome.db", "ReactomePA", "Hmisc", "gtools", "biomaRt", "foreach", "gplots", "ggbeeswarm", "factoextra", "VennDiagram", "rhdf5", "tximport", "DESeq2", "vsn", "genefilter", "IHW"), version = "3.12")'
+
+COPY fgsea_1.12.0.tar.gz /tmp/fgsea_1.12.0.tar.gz
+RUN Rscript -e 'install.packages("/tmp/fgsea_1.12.0.tar.gz", repos = NULL, type = "source")'
 
 COPY org.Hs.eg.db_3.8.2.tar.gz /tmp/org.Hs.eg.db_3.8.2.tar.gz
 COPY clusterProfiler_3.12.0.tar.gz /tmp/clusterProfiler_3.12.0.tar.gz
