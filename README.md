@@ -18,7 +18,7 @@ This repository provides the original code used to prepared each panel of the ma
 We try to provide access to the analysis in the easiest possible way, the user can follow this few instructions and should be able to be up and running quickly. Withing each folder you can find all the scripts and data required the reproduce the analysis. Just open the 'Figure_X.Rmd' and run it.  
 
 ### Requirements
-Some of the calculations, expecially to reproduce Figure 3 can be quite memory demanding, we suggest a minimum of 32 Gb of system memory.
+Some of the calculations, especially to reproduce Figure 3 can be quite memory demanding, we suggest a minimum of 32 Gb of system memory.
 - [Git](https://git-scm.com/)
 - [Docker](https://www.docker.com/)
 
@@ -50,7 +50,7 @@ docker run -dp 8787:8787 -e USER=mariorossi -e PASSWORD=mariorossi --name rep_hu
 Enter in your browser `localhost:8787`, this should start a Rstudio session you can use to explore the code and reproduce the analysis.
 
 ## How to cite *huva*
-If you use *huva* in your research project consider citing us [linktojournal](weblink).
+If you use *huva* in your research project consider citing us [linktojournal](https://www.cell.com/iscience/fulltext/S2589-0042(22)01600-5#%20).
 
 ## Contact or follow us
 For any problem of question regrding the *huva* package or this repositoy or you just want to be up to date on what is coming next, send us an [email](mailto:lorenzobonaguro@uni-bonn.de) or follow us:  
